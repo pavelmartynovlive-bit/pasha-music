@@ -36,11 +36,23 @@
       <p class="setup-note">VK cookies остаются только на сервере и никогда не сохраняются в PWA.</p>
     </section>
 
-    <form class="search-form" id="searchForm" role="search">
-      <button class="search-submit" type="submit" aria-label="Найти музыку">⌕</button>
-      <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="Трек или исполнитель" autocomplete="off" aria-label="Поиск музыки" />
-      <button class="search-clear" id="clearSearchButton" type="button" aria-label="Очистить поиск" hidden>×</button>
-    </form>
+    <div class="search-area">
+      <form class="search-form" id="searchForm" role="search">
+        <button class="search-submit" type="submit" aria-label="Найти музыку">⌕</button>
+        <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="Трек или исполнитель" autocomplete="off" aria-label="Поиск музыки" aria-controls="searchSuggestions searchResults" />
+        <button class="search-clear" id="clearSearchButton" type="button" aria-label="Очистить поиск" hidden>×</button>
+      </form>
+
+      <div class="search-suggestions" id="searchSuggestions" aria-label="Поисковые подсказки" hidden></div>
+
+      <section class="search-results" id="searchResults" aria-live="polite" hidden>
+        <div class="search-results-heading">
+          <h2>Результаты</h2>
+          <span id="searchResultCount"></span>
+        </div>
+        <div class="search-result-list" id="searchResultList"></div>
+      </section>
+    </div>
 
     <section class="hero">
       <div class="cover" id="cover">

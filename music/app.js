@@ -1,7 +1,9 @@
 const STORAGE_KEY = "pashaMusicConnectionV1";
+const SEARCH_RESULT_LIMIT = 5;
+const SUGGESTION_DELAY = 280;
 
 const elements = Object.fromEntries(
-  ["audio", "apiKeyInput", "backendUrlInput", "clearSearchButton", "closeSetupButton", "coverFallback", "coverImage", "currentTime", "duration", "nextButton", "playButton", "previousButton", "searchForm", "searchInput", "sectionTabs", "sectionTitle", "seek", "settingsButton", "setupForm", "setupPanel", "status", "trackArtist", "trackCount", "trackLabel", "trackList", "trackTitle"]
+  ["audio", "apiKeyInput", "backendUrlInput", "clearSearchButton", "closeSetupButton", "coverFallback", "coverImage", "currentTime", "duration", "nextButton", "playButton", "previousButton", "searchForm", "searchInput", "searchResultCount", "searchResultList", "searchResults", "searchSuggestions", "sectionTabs", "sectionTitle", "seek", "settingsButton", "setupForm", "setupPanel", "status", "trackArtist", "trackCount", "trackLabel", "trackList", "trackTitle"]
     .map((id) => [id, document.getElementById(id)])
 );
 
@@ -10,7 +12,26 @@ function readConfig() {
   catch { return {}; }
 }
 
-const state = { config: readConfig(), sections: [], currentSectionId: null, tracks: [], currentIndex: -1, currentTrackKey: null, viewMode: "library" };
+const state = {
+  config: readConfig(),
+  sections: [],
+  currentSectionId: null,
+  libraryTracks: [],
+  searchTracks: [],
+  searchTotal: 0,
+  searchQuery: "",
+  searchActive: false,
+  playbackQueue: [],
+  currentTrackKey: null,
+  suggestionTimer: null,
+  suggestionRequestId: 0,
+};
+
+const CYRILLIC_TO_LATIN = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i", й: "i",
+  к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f",
+  х: "h", ц: "c", ч: "ch", ш: "sh", щ: "sch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+};
 
 function setStatus(message, isError = false) {
   elements.status.textContent = message;
@@ -58,68 +79,190 @@ function trackKey(track) {
   return `${track.ownerId}_${track.id}`;
 }
 
+function normalizeSearchText(value) {
+  return value
+    .toLocaleLowerCase("ru")
+    .split("")
+    .map((letter) => CYRILLIC_TO_LATIN[letter] ?? letter)
+    .join("")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function editDistance(left, right) {
+  const row = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i += 1) {
+    let previous = row[0];
+    row[0] = i;
+    for (let j = 1; j <= right.length; j += 1) {
+      const current = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, previous + (left[i - 1] === right[j - 1] ? 0 : 1));
+      previous = current;
+    }
+  }
+  return row[right.length];
+}
+
+function localSuggestions(query) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (normalizedQuery.length < 2) return [];
+  const artists = [...new Set(state.libraryTracks.flatMap((track) => track.artists?.map((artist) => artist.name) || [track.artist]).filter(Boolean))];
+  return artists
+    .map((artist) => {
+      const normalizedArtist = normalizeSearchText(artist);
+      let score = Number.POSITIVE_INFINITY;
+      if (normalizedArtist.startsWith(normalizedQuery)) score = 0;
+      else if (normalizedArtist.includes(normalizedQuery)) score = 1;
+      else if (normalizedQuery.length >= 3 && editDistance(normalizedQuery, normalizedArtist.slice(0, normalizedQuery.length)) <= 1) score = 2;
+      return { artist, score };
+    })
+    .filter(({ score }) => Number.isFinite(score))
+    .sort((left, right) => left.score - right.score || left.artist.localeCompare(right.artist, "ru"))
+    .map(({ artist }) => artist);
+}
+
 function renderSections() {
   elements.sectionTabs.replaceChildren(...state.sections.map((section) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "section-tab";
-    button.classList.toggle("active", state.viewMode === "library" && section.id === state.currentSectionId);
+    button.classList.toggle("active", section.id === state.currentSectionId);
     button.textContent = section.title;
     button.addEventListener("click", () => loadSection(section.id));
     return button;
   }));
 }
 
-function renderTracks() {
-  elements.trackCount.textContent = state.viewMode === "search"
-    ? `${state.tracks.length} результатов`
-    : `${state.tracks.length} треков`;
-  if (!state.tracks.length) {
+function createTrackRow(track, queue) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "track-row";
+  button.classList.toggle("active", trackKey(track) === state.currentTrackKey);
+  button.addEventListener("click", () => playTrack(track, queue));
+  const artwork = artworkFor(track);
+  const visual = artwork
+    ? Object.assign(document.createElement("img"), { src: artwork, alt: "", loading: "lazy" })
+    : Object.assign(document.createElement("span"), { className: "track-art-fallback", textContent: "♪" });
+  const copy = document.createElement("span");
+  copy.className = "track-copy";
+  const title = document.createElement("strong");
+  title.textContent = track.title;
+  const artist = document.createElement("small");
+  artist.textContent = track.artist;
+  copy.append(title, artist);
+  const duration = document.createElement("span");
+  duration.className = "track-duration";
+  duration.textContent = formatTime(track.duration);
+  button.append(visual, copy, duration);
+  return button;
+}
+
+function renderLibraryTracks() {
+  elements.trackCount.textContent = `${state.libraryTracks.length} треков`;
+  if (!state.libraryTracks.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
     empty.textContent = "В этом разделе пока нет доступных треков.";
     elements.trackList.replaceChildren(empty);
     return;
   }
-  elements.trackList.replaceChildren(...state.tracks.map((track, index) => {
+  elements.trackList.replaceChildren(...state.libraryTracks.map((track) => createTrackRow(track, state.libraryTracks)));
+}
+
+function renderSearchResults() {
+  elements.searchResults.hidden = !state.searchActive;
+  if (!state.searchActive) {
+    elements.searchResultList.replaceChildren();
+    elements.searchResultCount.textContent = "";
+    return;
+  }
+
+  const visibleTracks = state.searchTracks.slice(0, SEARCH_RESULT_LIMIT);
+  elements.searchResultCount.textContent = state.searchTotal > visibleTracks.length
+    ? `${visibleTracks.length} из ${state.searchTotal}`
+    : `${visibleTracks.length}`;
+
+  if (!visibleTracks.length) {
+    const empty = document.createElement("div");
+    empty.className = "search-empty";
+    empty.textContent = "Ничего не найдено";
+    elements.searchResultList.replaceChildren(empty);
+    return;
+  }
+
+  elements.searchResultList.replaceChildren(...visibleTracks.map((track) => createTrackRow(track, visibleTracks)));
+}
+
+function renderSuggestions(suggestions) {
+  const queryKey = normalizeSearchText(elements.searchInput.value);
+  const unique = [];
+  const seen = new Set([queryKey]);
+  for (const suggestion of suggestions) {
+    const key = normalizeSearchText(suggestion);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(suggestion);
+    if (unique.length === 5) break;
+  }
+
+  elements.searchSuggestions.hidden = unique.length === 0;
+  elements.searchSuggestions.replaceChildren(...unique.map((suggestion) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "track-row";
-    button.classList.toggle("active", trackKey(track) === state.currentTrackKey);
-    button.addEventListener("click", () => playTrack(index));
-    const artwork = artworkFor(track);
-    const visual = artwork
-      ? Object.assign(document.createElement("img"), { src: artwork, alt: "", loading: "lazy" })
-      : Object.assign(document.createElement("span"), { className: "track-art-fallback", textContent: "♪" });
-    const copy = document.createElement("span");
-    copy.className = "track-copy";
-    const title = document.createElement("strong");
-    title.textContent = track.title;
-    const artist = document.createElement("small");
-    artist.textContent = track.artist;
-    copy.append(title, artist);
-    const duration = document.createElement("span");
-    duration.className = "track-duration";
-    duration.textContent = formatTime(track.duration);
-    button.append(visual, copy, duration);
+    button.className = "suggestion-chip";
+    button.textContent = suggestion;
+    button.addEventListener("click", () => {
+      elements.searchInput.value = suggestion;
+      elements.clearSearchButton.hidden = false;
+      elements.searchSuggestions.hidden = true;
+      searchTracks(suggestion);
+      elements.searchInput.blur();
+    });
     return button;
   }));
+}
+
+async function loadSuggestions(query) {
+  const requestId = ++state.suggestionRequestId;
+  const local = localSuggestions(query);
+  renderSuggestions(local);
+  try {
+    const data = await api(`/api/search/suggestions?q=${encodeURIComponent(query)}`);
+    if (requestId !== state.suggestionRequestId || elements.searchInput.value.trim() !== query) return;
+    renderSuggestions([...local, ...(data.result.suggestions || [])]);
+  } catch {
+    if (requestId === state.suggestionRequestId) renderSuggestions(local);
+  }
+}
+
+function scheduleSuggestions() {
+  clearTimeout(state.suggestionTimer);
+  const query = elements.searchInput.value.trim();
+  elements.clearSearchButton.hidden = !query;
+  if (query !== state.searchQuery) {
+    state.searchActive = false;
+    renderSearchResults();
+  }
+  if (query.length < 2) {
+    state.suggestionRequestId += 1;
+    renderSuggestions([]);
+    return;
+  }
+  renderSuggestions(localSuggestions(query));
+  state.suggestionTimer = setTimeout(() => loadSuggestions(query), SUGGESTION_DELAY);
 }
 
 async function loadSection(sectionId) {
   if (!sectionId) return;
   try {
     state.currentSectionId = sectionId;
-    state.viewMode = "library";
-    elements.searchInput.value = "";
-    elements.clearSearchButton.hidden = true;
+    clearSearch(true);
     renderSections();
     setStatus("Загружаю треки…");
     const data = await api(`/api/sections/${encodeURIComponent(sectionId)}`);
-    state.tracks = data.result.tracks || [];
+    state.libraryTracks = data.result.tracks || [];
     elements.sectionTitle.textContent = data.result.title || "Музыка";
-    renderTracks();
-    setStatus(state.tracks.length ? "Готово к воспроизведению" : "Раздел пуст");
+    renderLibraryTracks();
+    setStatus(state.libraryTracks.length ? "Готово к воспроизведению" : "Раздел пуст");
   } catch (error) {
     setStatus(error.message, true);
     showSetup(error.message.includes("ключ") || error.message.includes("backend"));
@@ -133,27 +276,42 @@ async function searchTracks(query) {
   }
 
   try {
-    state.viewMode = "search";
+    clearTimeout(state.suggestionTimer);
+    state.suggestionRequestId += 1;
+    state.searchQuery = normalizedQuery;
+    state.searchActive = true;
+    state.searchTracks = [];
+    state.searchTotal = 0;
     elements.clearSearchButton.hidden = false;
-    renderSections();
+    elements.searchSuggestions.hidden = true;
+    elements.searchResults.hidden = true;
     setStatus(`Ищу «${normalizedQuery}»…`);
     const data = await api(`/api/search?q=${encodeURIComponent(normalizedQuery)}`);
-    state.tracks = data.result.tracks || [];
-    state.currentIndex = -1;
-    elements.sectionTitle.textContent = `Поиск: ${data.result.query}`;
-    renderTracks();
-    setStatus(state.tracks.length ? `Найдено: ${data.result.count}` : "Ничего не найдено");
+    state.searchTracks = data.result.tracks || [];
+    state.searchTotal = data.result.count || state.searchTracks.length;
+    renderSearchResults();
+    setStatus(state.searchTracks.length ? `Найдено: ${state.searchTotal}` : "Ничего не найдено");
   } catch (error) {
+    state.searchTracks = [];
+    state.searchTotal = 0;
+    renderSearchResults();
     setStatus(error.message, true);
     showSetup(error.message.includes("ключ") || error.message.includes("backend"));
   }
 }
 
-function clearSearch() {
-  elements.searchInput.value = "";
+function clearSearch(clearInput = true) {
+  clearTimeout(state.suggestionTimer);
+  state.suggestionRequestId += 1;
+  if (clearInput) elements.searchInput.value = "";
   elements.clearSearchButton.hidden = true;
-  state.viewMode = "library";
-  loadSection(state.currentSectionId || state.sections[0]?.id);
+  elements.searchSuggestions.hidden = true;
+  state.searchActive = false;
+  state.searchTracks = [];
+  state.searchTotal = 0;
+  state.searchQuery = "";
+  renderSearchResults();
+  if (clearInput && elements.audio.paused) setStatus("Готово к воспроизведению");
 }
 
 async function loadLibrary() {
@@ -171,10 +329,9 @@ async function loadLibrary() {
   }
 }
 
-async function playTrack(index) {
-  const track = state.tracks[index];
+async function playTrack(track, queue) {
   if (!track?.fileUrl) return setStatus("У этого трека нет ссылки для воспроизведения", true);
-  state.currentIndex = index;
+  state.playbackQueue = queue;
   state.currentTrackKey = trackKey(track);
   elements.audio.src = track.fileUrl;
   elements.trackLabel.textContent = "Сейчас играет";
@@ -184,7 +341,8 @@ async function playTrack(index) {
   elements.coverImage.hidden = !artwork;
   elements.coverFallback.hidden = Boolean(artwork);
   if (artwork) elements.coverImage.src = artwork;
-  renderTracks();
+  renderLibraryTracks();
+  renderSearchResults();
   if ("mediaSession" in navigator) {
     navigator.mediaSession.metadata = new MediaMetadata({ title: track.title, artist: track.artist, album: track.album?.title || "VK Music", artwork: artwork ? [{ src: artwork }] : [] });
   }
@@ -193,10 +351,10 @@ async function playTrack(index) {
 }
 
 function moveTrack(offset) {
-  if (!state.tracks.length) return;
-  const activeIndex = state.tracks.findIndex((track) => trackKey(track) === state.currentTrackKey);
+  if (!state.playbackQueue.length) return;
+  const activeIndex = state.playbackQueue.findIndex((track) => trackKey(track) === state.currentTrackKey);
   const current = activeIndex < 0 ? 0 : activeIndex;
-  playTrack((current + offset + state.tracks.length) % state.tracks.length);
+  playTrack(state.playbackQueue[(current + offset + state.playbackQueue.length) % state.playbackQueue.length], state.playbackQueue);
 }
 
 elements.setupForm.addEventListener("submit", async (event) => {
@@ -215,13 +373,16 @@ elements.searchForm.addEventListener("submit", (event) => {
   searchTracks(elements.searchInput.value);
   elements.searchInput.blur();
 });
-elements.searchInput.addEventListener("input", () => {
-  elements.clearSearchButton.hidden = !elements.searchInput.value;
-});
-elements.clearSearchButton.addEventListener("click", clearSearch);
+elements.searchInput.addEventListener("input", scheduleSuggestions);
+elements.searchInput.addEventListener("focus", scheduleSuggestions);
+elements.clearSearchButton.addEventListener("click", () => clearSearch(true));
 elements.playButton.addEventListener("click", () => {
-  if (!elements.audio.src) playTrack(state.currentIndex >= 0 ? state.currentIndex : 0);
-  else if (elements.audio.paused) elements.audio.play();
+  if (!elements.audio.src) {
+    const initialQueue = state.searchActive && state.searchTracks.length
+      ? state.searchTracks.slice(0, SEARCH_RESULT_LIMIT)
+      : state.libraryTracks;
+    if (initialQueue.length) playTrack(initialQueue[0], initialQueue);
+  } else if (elements.audio.paused) elements.audio.play();
   else elements.audio.pause();
 });
 elements.previousButton.addEventListener("click", () => moveTrack(-1));

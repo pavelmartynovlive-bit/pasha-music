@@ -207,6 +207,36 @@ app.get("/api/sections/:sectionId", async (req, res) => {
   }
 });
 
+app.get("/api/search/suggestions", async (req, res) => {
+  const query = String(req.query.q || "").trim();
+
+  if (query.length < 2) {
+    return res.json({ ok: true, result: { query, suggestions: [] } });
+  }
+
+  if (query.length > 100) {
+    return res.status(400).json({
+      ok: false,
+      error: "Поисковый запрос слишком длинный",
+    });
+  }
+
+  try {
+    const vk = makeVkAudio();
+    const suggestions = await vk.getSearchSuggestion(query);
+
+    res.json({
+      ok: true,
+      result: {
+        query,
+        suggestions: [...new Set(suggestions)].slice(0, 5),
+      },
+    });
+  } catch (error) {
+    sendVkError(res, error, "VK getSearchSuggestion");
+  }
+});
+
 app.get("/api/search", async (req, res) => {
   const query = String(req.query.q || "").trim();
   const offset = Math.max(0, Number.parseInt(String(req.query.offset || "0"), 10) || 0);
