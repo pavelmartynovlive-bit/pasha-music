@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: pasha-vk-music-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ALLOWED_ORIGIN
+        value: https://pavelmartynovlive-bit.github.io
+      - key: API_KEY
+        generateValue: true
+      - key: VK_COOKIE_P
+        sync: false
+      - key: VK_COOKIE_REMIXSID
+        sync: false

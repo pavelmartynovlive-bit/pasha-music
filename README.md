@@ -29,6 +29,24 @@
 
 PWA должна открыться сразу на экране `/music/` и работать как standalone-приложение.
 
-## Что пока НЕ реализовано
+## Подключение backend
 
-VK не подключён. Это только проверка установки и запуска отдельной PWA.
+При первом запуске PWA попросит:
+
+- публичный HTTPS-адрес backend;
+- персональный API-ключ.
+
+Настройки хранятся только в `localStorage` браузера. VK cookies во frontend не
+передаются и в репозиторий не записываются.
+
+Backend должен разрешать CORS для:
+
+`https://pavelmartynovlive-bit.github.io`
+
+## Публикация backend
+
+В папке `backend/` находится Node.js API без секретов, а `render.yaml` описывает
+его публикацию на Render. При создании Blueprint Render отдельно запросит
+`VK_COOKIE_P` и `VK_COOKIE_REMIXSID`, а персональный `API_KEY` сгенерирует сам.
+
+`.env`, cookies и API-ключ исключены из Git и не должны попадать в GitHub.
