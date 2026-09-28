@@ -1,0 +1,22 @@
+{
+  "name": "Pasha Music",
+  "short_name": "Music",
+  "description": "Личный музыкальный PWA-плеер",
+  "start_url": "./music/",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b0b0c",
+  "theme_color": "#0b0b0c",
+  "icons": [
+    {
+      "src": "./icons/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
