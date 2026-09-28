@@ -1,7 +1,7 @@
 const STORAGE_KEY = "pashaMusicConnectionV1";
 
 const elements = Object.fromEntries(
-  ["audio", "apiKeyInput", "backendUrlInput", "closeSetupButton", "coverFallback", "coverImage", "currentTime", "duration", "nextButton", "playButton", "previousButton", "sectionTabs", "sectionTitle", "seek", "settingsButton", "setupForm", "setupPanel", "status", "trackArtist", "trackCount", "trackLabel", "trackList", "trackTitle"]
+  ["audio", "apiKeyInput", "backendUrlInput", "clearSearchButton", "closeSetupButton", "coverFallback", "coverImage", "currentTime", "duration", "nextButton", "playButton", "previousButton", "searchForm", "searchInput", "sectionTabs", "sectionTitle", "seek", "settingsButton", "setupForm", "setupPanel", "status", "trackArtist", "trackCount", "trackLabel", "trackList", "trackTitle"]
     .map((id) => [id, document.getElementById(id)])
 );
 
@@ -10,7 +10,7 @@ function readConfig() {
   catch { return {}; }
 }
 
-const state = { config: readConfig(), sections: [], currentSectionId: null, tracks: [], currentIndex: -1 };
+const state = { config: readConfig(), sections: [], currentSectionId: null, tracks: [], currentIndex: -1, currentTrackKey: null, viewMode: "library" };
 
 function setStatus(message, isError = false) {
   elements.status.textContent = message;
@@ -54,12 +54,16 @@ function formatTime(value) {
   return `${Math.floor(value / 60)}:${Math.floor(value % 60).toString().padStart(2, "0")}`;
 }
 
+function trackKey(track) {
+  return `${track.ownerId}_${track.id}`;
+}
+
 function renderSections() {
   elements.sectionTabs.replaceChildren(...state.sections.map((section) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "section-tab";
-    button.classList.toggle("active", section.id === state.currentSectionId);
+    button.classList.toggle("active", state.viewMode === "library" && section.id === state.currentSectionId);
     button.textContent = section.title;
     button.addEventListener("click", () => loadSection(section.id));
     return button;
@@ -67,7 +71,9 @@ function renderSections() {
 }
 
 function renderTracks() {
-  elements.trackCount.textContent = `${state.tracks.length} треков`;
+  elements.trackCount.textContent = state.viewMode === "search"
+    ? `${state.tracks.length} результатов`
+    : `${state.tracks.length} треков`;
   if (!state.tracks.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
@@ -79,7 +85,7 @@ function renderTracks() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "track-row";
-    button.classList.toggle("active", index === state.currentIndex);
+    button.classList.toggle("active", trackKey(track) === state.currentTrackKey);
     button.addEventListener("click", () => playTrack(index));
     const artwork = artworkFor(track);
     const visual = artwork
@@ -104,6 +110,9 @@ async function loadSection(sectionId) {
   if (!sectionId) return;
   try {
     state.currentSectionId = sectionId;
+    state.viewMode = "library";
+    elements.searchInput.value = "";
+    elements.clearSearchButton.hidden = true;
     renderSections();
     setStatus("Загружаю треки…");
     const data = await api(`/api/sections/${encodeURIComponent(sectionId)}`);
@@ -115,6 +124,36 @@ async function loadSection(sectionId) {
     setStatus(error.message, true);
     showSetup(error.message.includes("ключ") || error.message.includes("backend"));
   }
+}
+
+async function searchTracks(query) {
+  const normalizedQuery = query.trim();
+  if (normalizedQuery.length < 2) {
+    return setStatus("Введите минимум два символа для поиска", true);
+  }
+
+  try {
+    state.viewMode = "search";
+    elements.clearSearchButton.hidden = false;
+    renderSections();
+    setStatus(`Ищу «${normalizedQuery}»…`);
+    const data = await api(`/api/search?q=${encodeURIComponent(normalizedQuery)}`);
+    state.tracks = data.result.tracks || [];
+    state.currentIndex = -1;
+    elements.sectionTitle.textContent = `Поиск: ${data.result.query}`;
+    renderTracks();
+    setStatus(state.tracks.length ? `Найдено: ${data.result.count}` : "Ничего не найдено");
+  } catch (error) {
+    setStatus(error.message, true);
+    showSetup(error.message.includes("ключ") || error.message.includes("backend"));
+  }
+}
+
+function clearSearch() {
+  elements.searchInput.value = "";
+  elements.clearSearchButton.hidden = true;
+  state.viewMode = "library";
+  loadSection(state.currentSectionId || state.sections[0]?.id);
 }
 
 async function loadLibrary() {
@@ -136,6 +175,7 @@ async function playTrack(index) {
   const track = state.tracks[index];
   if (!track?.fileUrl) return setStatus("У этого трека нет ссылки для воспроизведения", true);
   state.currentIndex = index;
+  state.currentTrackKey = trackKey(track);
   elements.audio.src = track.fileUrl;
   elements.trackLabel.textContent = "Сейчас играет";
   elements.trackTitle.textContent = track.title;
@@ -154,7 +194,8 @@ async function playTrack(index) {
 
 function moveTrack(offset) {
   if (!state.tracks.length) return;
-  const current = state.currentIndex < 0 ? 0 : state.currentIndex;
+  const activeIndex = state.tracks.findIndex((track) => trackKey(track) === state.currentTrackKey);
+  const current = activeIndex < 0 ? 0 : activeIndex;
   playTrack((current + offset + state.tracks.length) % state.tracks.length);
 }
 
@@ -169,6 +210,15 @@ elements.setupForm.addEventListener("submit", async (event) => {
 });
 elements.settingsButton.addEventListener("click", () => showSetup(true));
 elements.closeSetupButton.addEventListener("click", () => showSetup(false));
+elements.searchForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  searchTracks(elements.searchInput.value);
+  elements.searchInput.blur();
+});
+elements.searchInput.addEventListener("input", () => {
+  elements.clearSearchButton.hidden = !elements.searchInput.value;
+});
+elements.clearSearchButton.addEventListener("click", clearSearch);
 elements.playButton.addEventListener("click", () => {
   if (!elements.audio.src) playTrack(state.currentIndex >= 0 ? state.currentIndex : 0);
   else if (elements.audio.paused) elements.audio.play();

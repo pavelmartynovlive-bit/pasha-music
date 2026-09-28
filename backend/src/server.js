@@ -207,6 +207,42 @@ app.get("/api/sections/:sectionId", async (req, res) => {
   }
 });
 
+app.get("/api/search", async (req, res) => {
+  const query = String(req.query.q || "").trim();
+  const offset = Math.max(0, Number.parseInt(String(req.query.offset || "0"), 10) || 0);
+
+  if (query.length < 2) {
+    return res.status(400).json({
+      ok: false,
+      error: "Введите минимум два символа для поиска",
+    });
+  }
+
+  if (query.length > 100) {
+    return res.status(400).json({
+      ok: false,
+      error: "Поисковый запрос слишком длинный",
+    });
+  }
+
+  try {
+    const vk = makeVkAudio();
+    const result = await vk.searchAudio(query, offset);
+
+    res.json({
+      ok: true,
+      result: {
+        query,
+        count: result.count,
+        tracks: result.audios,
+        nextOffset: offset + result.audios.length,
+      },
+    });
+  } catch (error) {
+    sendVkError(res, error, "VK searchAudio");
+  }
+});
+
 app.get("/api/first-track", async (_req, res) => {
   try {
     const vk = makeVkAudio();

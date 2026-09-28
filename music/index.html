@@ -36,6 +36,12 @@
       <p class="setup-note">VK cookies остаются только на сервере и никогда не сохраняются в PWA.</p>
     </section>
 
+    <form class="search-form" id="searchForm" role="search">
+      <button class="search-submit" type="submit" aria-label="Найти музыку">⌕</button>
+      <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="Трек или исполнитель" autocomplete="off" aria-label="Поиск музыки" />
+      <button class="search-clear" id="clearSearchButton" type="button" aria-label="Очистить поиск" hidden>×</button>
+    </form>
+
     <section class="hero">
       <div class="cover" id="cover">
         <img id="coverImage" alt="" hidden />
