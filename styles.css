@@ -37,10 +37,10 @@ h2 { font-size: 22px; letter-spacing: -.025em; }
 .search-results-heading { display: flex; align-items: baseline; justify-content: space-between; padding: 0 6px 7px; }
 .search-results-heading h2 { font-size: 18px; }
 .search-results-heading span { color: #8e8e93; font-size: 12px; }
-.search-result-list { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, auto); grid-auto-columns: calc(100% - 30px); gap: 2px 12px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x mandatory; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.search-result-list { display: grid; grid-auto-flow: column; grid-template-rows: repeat(5, auto); grid-auto-columns: calc(100% - 30px); gap: 2px 12px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x mandatory; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .search-result-list::-webkit-scrollbar { display: none; }
 .search-result-list .track-row { grid-template-columns: 42px minmax(0,1fr) auto; padding: 7px 6px; }
-.search-result-list .track-row:nth-child(3n + 1) { scroll-snap-align: start; }
+.search-result-list .track-row:nth-child(5n + 1) { scroll-snap-align: start; }
 .search-result-list .track-row img, .search-result-list .track-art-fallback { width: 42px; height: 42px; border-radius: 9px; }
 .search-empty { padding: 20px 8px; color: #8e8e93; font-size: 14px; text-align: center; }
 .cover { aspect-ratio: 1; display: grid; place-items: center; overflow: hidden; border-radius: 24px; background: linear-gradient(145deg, rgba(255,255,255,.15), rgba(255,255,255,.03)), #1c1c1e; box-shadow: 0 25px 80px rgba(0,0,0,.35); }

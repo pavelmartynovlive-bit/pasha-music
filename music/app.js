@@ -1,5 +1,5 @@
 const STORAGE_KEY = "pashaMusicConnectionV1";
-const SEARCH_RESULT_LIMIT = 5;
+const SEARCH_RESULT_LIMIT = 20;
 const SUGGESTION_DELAY = 280;
 const PUBLIC_BACKEND_URL = "https://pasha-music.132-243-23-229.sslip.io";
 const LEGACY_BACKEND_URLS = new Set([
