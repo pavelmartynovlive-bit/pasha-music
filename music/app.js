@@ -7,7 +7,7 @@ const LEGACY_BACKEND_URLS = new Set([
 ]);
 
 const elements = Object.fromEntries(
-  ["audio", "apiKeyInput", "backendUrlInput", "clearSearchButton", "closeSetupButton", "coverFallback", "coverImage", "currentTime", "duration", "nextButton", "playButton", "previousButton", "searchForm", "searchInput", "searchResultCount", "searchResultList", "searchResults", "searchSuggestions", "sectionTabs", "sectionTitle", "seek", "settingsButton", "setupForm", "setupPanel", "status", "trackArtist", "trackCount", "trackLabel", "trackList", "trackTitle"]
+  ["audio", "apiKeyInput", "backendUrlInput", "clearSearchButton", "closePlayerButton", "closeSetupButton", "coverFallback", "coverImage", "currentTime", "duration", "fullPlayer", "miniCoverFallback", "miniCoverImage", "miniNextButton", "miniPlayButton", "miniPlayer", "miniProgress", "miniTrackArtist", "miniTrackTitle", "nextButton", "openPlayerButton", "playButton", "previousButton", "searchForm", "searchInput", "searchResultCount", "searchResultList", "searchResults", "searchSuggestions", "sectionTabs", "sectionTitle", "seek", "settingsButton", "setupForm", "setupPanel", "status", "trackArtist", "trackCount", "trackLabel", "trackList", "trackTitle"]
     .map((id) => [id, document.getElementById(id)])
 );
 
@@ -27,6 +27,7 @@ const state = {
   searchActive: false,
   playbackQueue: [],
   currentTrackKey: null,
+  currentTrack: null,
   suggestionTimer: null,
   suggestionRequestId: 0,
 };
@@ -81,6 +82,21 @@ function formatTime(value) {
 
 function trackKey(track) {
   return `${track.ownerId}_${track.id}`;
+}
+
+function showPlayer(show = true) {
+  if (show && !state.currentTrack) return;
+  elements.fullPlayer.hidden = !show;
+  document.body.classList.toggle("player-open", show);
+}
+
+function setPlaybackButtonState(isPlaying) {
+  const label = isPlaying ? "Пауза" : "Воспроизвести";
+  const symbol = isPlaying ? "❚❚" : "▶";
+  elements.playButton.textContent = symbol;
+  elements.miniPlayButton.textContent = symbol;
+  elements.playButton.setAttribute("aria-label", label);
+  elements.miniPlayButton.setAttribute("aria-label", label);
 }
 
 function normalizeSearchText(value) {
@@ -337,14 +353,25 @@ async function playTrack(track, queue) {
   if (!track?.fileUrl) return setStatus("У этого трека нет ссылки для воспроизведения", true);
   state.playbackQueue = queue;
   state.currentTrackKey = trackKey(track);
+  state.currentTrack = track;
   elements.audio.src = track.fileUrl;
+  elements.seek.value = "0";
+  elements.miniProgress.style.width = "0%";
   elements.trackLabel.textContent = "Сейчас играет";
   elements.trackTitle.textContent = track.title;
   elements.trackArtist.textContent = track.artist;
+  elements.miniTrackTitle.textContent = track.title;
+  elements.miniTrackArtist.textContent = track.artist;
+  elements.miniPlayer.hidden = false;
   const artwork = artworkFor(track);
   elements.coverImage.hidden = !artwork;
   elements.coverFallback.hidden = Boolean(artwork);
-  if (artwork) elements.coverImage.src = artwork;
+  elements.miniCoverImage.hidden = !artwork;
+  elements.miniCoverFallback.hidden = Boolean(artwork);
+  if (artwork) {
+    elements.coverImage.src = artwork;
+    elements.miniCoverImage.src = artwork;
+  }
   renderLibraryTracks();
   renderSearchResults();
   if ("mediaSession" in navigator) {
@@ -380,6 +407,8 @@ elements.searchForm.addEventListener("submit", (event) => {
 elements.searchInput.addEventListener("input", scheduleSuggestions);
 elements.searchInput.addEventListener("focus", scheduleSuggestions);
 elements.clearSearchButton.addEventListener("click", () => clearSearch(true));
+elements.openPlayerButton.addEventListener("click", () => showPlayer(true));
+elements.closePlayerButton.addEventListener("click", () => showPlayer(false));
 elements.playButton.addEventListener("click", () => {
   if (!elements.audio.src) {
     const initialQueue = state.searchActive && state.searchTracks.length
@@ -389,21 +418,31 @@ elements.playButton.addEventListener("click", () => {
   } else if (elements.audio.paused) elements.audio.play();
   else elements.audio.pause();
 });
+elements.miniPlayButton.addEventListener("click", () => {
+  if (elements.audio.paused) elements.audio.play();
+  else elements.audio.pause();
+});
 elements.previousButton.addEventListener("click", () => moveTrack(-1));
 elements.nextButton.addEventListener("click", () => moveTrack(1));
+elements.miniNextButton.addEventListener("click", () => moveTrack(1));
 elements.seek.addEventListener("input", () => {
   if (Number.isFinite(elements.audio.duration)) elements.audio.currentTime = (Number(elements.seek.value) / 100) * elements.audio.duration;
 });
-elements.audio.addEventListener("play", () => { elements.playButton.textContent = "❚❚"; elements.playButton.setAttribute("aria-label", "Пауза"); });
-elements.audio.addEventListener("pause", () => { elements.playButton.textContent = "▶"; elements.playButton.setAttribute("aria-label", "Воспроизвести"); });
+elements.audio.addEventListener("play", () => setPlaybackButtonState(true));
+elements.audio.addEventListener("pause", () => setPlaybackButtonState(false));
 elements.audio.addEventListener("timeupdate", () => {
   const { currentTime, duration } = elements.audio;
   elements.currentTime.textContent = formatTime(currentTime);
   elements.duration.textContent = formatTime(duration);
-  elements.seek.value = Number.isFinite(duration) && duration > 0 ? String((currentTime / duration) * 100) : "0";
+  const progress = Number.isFinite(duration) && duration > 0 ? (currentTime / duration) * 100 : 0;
+  elements.seek.value = String(progress);
+  elements.miniProgress.style.width = `${progress}%`;
 });
 elements.audio.addEventListener("ended", () => moveTrack(1));
 elements.audio.addEventListener("error", () => setStatus("Не удалось открыть аудио. Обновите раздел и попробуйте снова.", true));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !elements.fullPlayer.hidden) showPlayer(false);
+});
 
 if ("mediaSession" in navigator) {
   navigator.mediaSession.setActionHandler("play", () => elements.audio.play());
