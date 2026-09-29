@@ -6,6 +6,7 @@ import cors from "cors";
 import { VKAudio } from "@toil/vk-audio";
 import { VKWebClient } from "@toil/vk-audio/client";
 import { getAudioItem } from "@toil/vk-audio/utils/index";
+import { fetchBusArrivals, formatVoiceArrivals } from "./bus.js";
 
 const app = express();
 
@@ -43,6 +44,39 @@ app.use(express.json());
 app.use("/api", (_req, res, next) => {
   res.set("Cache-Control", "no-store");
   next();
+});
+
+app.get("/api/arrivals", async (_req, res) => {
+  try {
+    const board = await fetchBusArrivals();
+    res.set("Cache-Control", "public, max-age=10, stale-while-revalidate=20");
+    res.json(board);
+  } catch (error) {
+    console.error(`Bus arrivals failed: ${error.message}`);
+    res.status(502).json({
+      ok: false,
+      error: "Сейчас не удалось получить данные об автобусах",
+    });
+  }
+});
+
+app.get("/api/voice", async (_req, res) => {
+  try {
+    const board = await fetchBusArrivals();
+    res.set({
+      "Cache-Control": "public, max-age=10, stale-while-revalidate=20",
+      "Content-Type": "text/plain; charset=utf-8",
+    });
+    res.send(formatVoiceArrivals(board));
+  } catch (error) {
+    console.error(`Bus voice failed: ${error.message}`);
+    res
+      .status(502)
+      .type("text/plain; charset=utf-8")
+      .send(
+        "Сейчас не удалось получить данные об автобусах. Попробуйте ещё раз через минуту."
+      );
+  }
 });
 
 function matchesApiKey(candidate) {
