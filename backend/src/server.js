@@ -10,6 +10,7 @@ import { getAudioItem } from "@toil/vk-audio/utils/index";
 const app = express();
 
 const PORT = Number(process.env.PORT || 8787);
+const HOST = process.env.HOST?.trim() || "0.0.0.0";
 const COOKIE_P = process.env.VK_COOKIE_P?.trim();
 const COOKIE_REMIXSID = process.env.VK_COOKIE_REMIXSID?.trim();
 const API_KEY = process.env.API_KEY?.trim();
@@ -312,8 +313,6 @@ app.use((err, _req, res, _next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`VK Music backend: http://localhost:${PORT}`);
-  console.log(`Health: http://localhost:${PORT}/api/health`);
-  console.log(`Sections: http://localhost:${PORT}/api/sections`);
+app.listen(PORT, HOST, () => {
+  console.log(`VK Music backend listening on ${HOST}:${PORT}`);
 });

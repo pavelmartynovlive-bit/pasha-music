@@ -1,0 +1,32 @@
+[Unit]
+Description=Pasha VK Music backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pasha-music
+Group=pasha-music
+WorkingDirectory=/opt/pasha-music-backend
+EnvironmentFile=/etc/pasha-music-backend.env
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+ExecStart=/usr/bin/node /opt/pasha-music-backend/src/server.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+MemoryMax=300M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+LockPersonality=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

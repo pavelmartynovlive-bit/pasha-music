@@ -1,6 +1,10 @@
 const STORAGE_KEY = "pashaMusicConnectionV1";
 const SEARCH_RESULT_LIMIT = 5;
 const SUGGESTION_DELAY = 280;
+const PUBLIC_BACKEND_URL = "https://pasha-music.132-243-23-229.sslip.io";
+const LEGACY_BACKEND_URLS = new Set([
+  "https://pasha-vk-music-backend.onrender.com",
+]);
 
 const elements = Object.fromEntries(
   ["audio", "apiKeyInput", "backendUrlInput", "clearSearchButton", "closeSetupButton", "coverFallback", "coverImage", "currentTime", "duration", "nextButton", "playButton", "previousButton", "searchForm", "searchInput", "searchResultCount", "searchResultList", "searchResults", "searchSuggestions", "sectionTabs", "sectionTitle", "seek", "settingsButton", "setupForm", "setupPanel", "status", "trackArtist", "trackCount", "trackLabel", "trackList", "trackTitle"]
@@ -409,13 +413,15 @@ if ("mediaSession" in navigator) {
 }
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("../sw.js", { scope: "../" });
 
-const localDefault = ["localhost", "127.0.0.1"].includes(location.hostname) ? "http://localhost:8787" : "";
-elements.backendUrlInput.value = state.config.backendUrl || localDefault;
-elements.apiKeyInput.value = state.config.apiKey || "";
-if (state.config.backendUrl || localDefault) {
-  if (!state.config.backendUrl) state.config.backendUrl = localDefault;
-  loadLibrary();
-} else {
-  showSetup(true);
-  setStatus("Укажите адрес опубликованного backend");
+const defaultBackendUrl = ["localhost", "127.0.0.1"].includes(location.hostname)
+  ? "http://localhost:8787"
+  : PUBLIC_BACKEND_URL;
+
+if (!state.config.backendUrl || LEGACY_BACKEND_URLS.has(state.config.backendUrl)) {
+  state.config.backendUrl = defaultBackendUrl;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.config));
 }
+
+elements.backendUrlInput.value = state.config.backendUrl;
+elements.apiKeyInput.value = state.config.apiKey || "";
+loadLibrary();

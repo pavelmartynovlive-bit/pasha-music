@@ -1,4 +1,4 @@
-const CACHE = "pasha-music-github-pages-v4";
+const CACHE = "pasha-music-github-pages-v5";
 const APP_SHELL = ["./", "./music/", "./music/app.js", "./styles.css", "./manifest.webmanifest", "./icons/icon-180.png", "./icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {
