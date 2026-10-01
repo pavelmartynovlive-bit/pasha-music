@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { timingSafeEqual } from "node:crypto";
+import { types as utilTypes } from "node:util";
 import express from "express";
 import cors from "cors";
 
@@ -7,6 +8,16 @@ import { VKAudio } from "@toil/vk-audio";
 import { VKWebClient } from "@toil/vk-audio/client";
 import { getAudioItem } from "@toil/vk-audio/utils/index";
 import { fetchBusArrivals, formatVoiceArrivals } from "./bus.js";
+
+// @toil/vk-audio uses Error.isError(), which is unavailable in Node.js 18.
+// Keep the backend compatible with the VPS runtime until Node is upgraded.
+if (typeof Error.isError !== "function") {
+  Object.defineProperty(Error, "isError", {
+    configurable: true,
+    value: utilTypes.isNativeError,
+    writable: true,
+  });
+}
 
 const app = express();
 
