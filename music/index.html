@@ -14,8 +14,12 @@
 </head>
 <body>
   <main class="app-shell" id="mainScreen">
-    <header class="topbar">
-      <div><div class="eyebrow">Личная PWA</div><h1>Музыка</h1></div>
+    <header class="home-header">
+      <span class="header-spacer" aria-hidden="true"></span>
+      <nav class="home-tabs" id="homeTabs" aria-label="Главные разделы">
+        <button class="home-tab active" type="button" data-home-tab="search" aria-selected="true">Поиск</button>
+        <button class="home-tab" type="button" data-home-tab="library" aria-selected="false">Моя музыка</button>
+      </nav>
       <button class="icon-button" id="settingsButton" type="button" aria-label="Настройки подключения">⚙</button>
     </header>
 
@@ -36,52 +40,60 @@
       <p class="setup-note">VK cookies остаются только на сервере и никогда не сохраняются в PWA.</p>
     </section>
 
-    <div class="search-area">
-      <form class="search-form" id="searchForm" role="search">
-        <button class="search-submit" type="submit" aria-label="Найти музыку">⌕</button>
-        <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="Трек или исполнитель" autocomplete="off" aria-label="Поиск музыки" aria-controls="searchSuggestions searchResults" />
-        <button class="search-clear" id="clearSearchButton" type="button" aria-label="Очистить поиск" hidden>×</button>
-      </form>
+    <section class="home-view search-home-view" id="searchHomeView">
+      <div class="mascot-hero" aria-hidden="true">
+        <img src="./assets/music-cat.png" alt="" />
+      </div>
 
-      <div class="search-suggestions" id="searchSuggestions" aria-label="Поисковые подсказки" hidden></div>
+      <div class="search-area">
+        <form class="search-form" id="searchForm" role="search">
+          <button class="search-submit" type="submit" aria-label="Найти музыку">⌕</button>
+          <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="Трек или исполнитель" autocomplete="off" aria-label="Поиск музыки" aria-controls="searchSuggestions searchResults" />
+          <button class="search-clear" id="clearSearchButton" type="button" aria-label="Очистить поиск" hidden>×</button>
+        </form>
 
-      <section class="search-results" id="searchResults" aria-live="polite" hidden>
-        <div class="search-results-heading">
-          <h2>Результаты</h2>
-          <span id="searchResultCount"></span>
-        </div>
-        <nav class="result-filters" id="resultFilters" aria-label="Тип результатов">
-          <button class="result-filter active" type="button" data-filter="all">Все</button>
-          <button class="result-filter" type="button" data-filter="tracks">Треки</button>
-          <button class="result-filter" type="button" data-filter="albums">Альбомы</button>
-        </nav>
-        <section class="result-group" id="searchTrackGroup">
-          <h3>Треки</h3>
-          <div class="search-result-list" id="searchResultList"></div>
+        <div class="search-suggestions" id="searchSuggestions" aria-label="Поисковые подсказки" hidden></div>
+
+        <section class="search-results" id="searchResults" aria-live="polite" hidden>
+          <div class="search-results-heading">
+            <h2>Результаты</h2>
+            <span id="searchResultCount"></span>
+          </div>
+          <nav class="result-filters" id="resultFilters" aria-label="Тип результатов">
+            <button class="result-filter active" type="button" data-filter="all">Все</button>
+            <button class="result-filter" type="button" data-filter="tracks">Треки</button>
+            <button class="result-filter" type="button" data-filter="albums">Альбомы</button>
+          </nav>
+          <section class="result-group" id="searchTrackGroup">
+            <h3>Треки</h3>
+            <div class="search-result-list" id="searchResultList"></div>
+          </section>
+          <section class="result-group" id="searchAlbumGroup">
+            <h3>Альбомы</h3>
+            <div class="album-grid search-album-grid" id="searchAlbumList"></div>
+          </section>
         </section>
-        <section class="result-group" id="searchAlbumGroup">
-          <h3>Альбомы</h3>
-          <div class="album-grid search-album-grid" id="searchAlbumList"></div>
-        </section>
-      </section>
-    </div>
+      </div>
+    </section>
 
     <div class="status" id="status" role="status">Подготовка…</div>
 
-    <section class="personal-library">
-      <div class="section-title"><h2>Моя музыка</h2><span id="personalLibraryCount"></span></div>
-      <nav class="library-switcher" id="librarySwitcher" aria-label="Моя музыка">
-        <button class="library-switch active" type="button" data-library-view="albums">Альбомы</button>
-        <button class="library-switch" type="button" data-library-view="playlists">Плейлисты</button>
-      </nav>
-      <div class="album-grid" id="libraryAlbumList"></div>
-      <div class="playlist-grid" id="libraryPlaylistList" hidden></div>
-    </section>
+    <section class="home-view library-home-view" id="libraryHomeView" hidden>
+      <section class="personal-library">
+        <div class="section-title"><h2>Моя музыка</h2><span id="personalLibraryCount"></span></div>
+        <nav class="library-switcher" id="librarySwitcher" aria-label="Моя музыка">
+          <button class="library-switch active" type="button" data-library-view="albums">Альбомы</button>
+          <button class="library-switch" type="button" data-library-view="playlists">Плейлисты</button>
+        </nav>
+        <div class="album-grid" id="libraryAlbumList"></div>
+        <div class="playlist-grid" id="libraryPlaylistList" hidden></div>
+      </section>
 
-    <section class="library">
-      <div class="section-title"><h2 id="sectionTitle">Треки</h2><span id="trackCount">0 треков</span></div>
-      <nav class="section-tabs" id="sectionTabs" aria-label="Музыкальные разделы"></nav>
-      <div class="track-list" id="trackList"></div>
+      <section class="library">
+        <div class="section-title"><h2 id="sectionTitle">Треки</h2><span id="trackCount">0 треков</span></div>
+        <nav class="section-tabs" id="sectionTabs" aria-label="Музыкальные разделы"></nav>
+        <div class="track-list" id="trackList"></div>
+      </section>
     </section>
   </main>
 

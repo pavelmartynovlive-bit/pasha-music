@@ -6,7 +6,12 @@ body.player-open { overflow: hidden; }
 button, input { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
 .app-shell { max-width: 620px; margin: 0 auto; padding: max(22px, env(safe-area-inset-top)) 20px max(126px, calc(env(safe-area-inset-bottom) + 106px)); }
-.topbar, .setup-heading, .section-title, .time-row { display: flex; align-items: center; justify-content: space-between; }
+.setup-heading, .section-title, .time-row { display: flex; align-items: center; justify-content: space-between; }
+.home-header { display: grid; grid-template-columns: 42px minmax(0, 1fr) 42px; gap: 10px; align-items: center; }
+.home-tabs { width: min(100%, 330px); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; justify-self: center; border: 1px solid #343438; border-radius: 999px; padding: 4px; background: rgba(20,20,23,.84); }
+.home-tab { min-height: 44px; border: 0; border-radius: 999px; padding: 9px 12px; background: transparent; color: #8e8e93; font-weight: 700; }
+.home-tab.active { background: #f5f5f7; color: #0b0b0c; box-shadow: 0 4px 14px rgba(0,0,0,.24); }
+.home-view[hidden] { display: none; }
 .eyebrow { margin-bottom: 3px; color: #8e8e93; font-size: 13px; }
 h1, h2, p { margin: 0; }
 h1 { font-size: 30px; letter-spacing: -.04em; }
@@ -20,7 +25,10 @@ h2 { font-size: 22px; letter-spacing: -.025em; }
 .setup-panel input:focus { border-color: #fff; }
 .primary-button { border: 0; border-radius: 12px; padding: 14px; background: #f5f5f7; color: #0b0b0c; font-weight: 700; }
 .setup-note { margin-top: 12px; color: #8e8e93; font-size: 12px; line-height: 1.45; }
-.search-area { margin-top: 18px; }
+.search-home-view { padding-top: 10px; }
+.mascot-hero { height: clamp(190px, 40vh, 330px); display: grid; place-items: center; overflow: hidden; }
+.mascot-hero img { width: min(78vw, 310px); height: min(78vw, 310px); object-fit: contain; filter: drop-shadow(0 24px 50px rgba(25,33,80,.3)); }
+.search-area { width: min(100%, 520px); margin: 0 auto; }
 .search-form { display: grid; grid-template-columns: 32px minmax(0, 1fr) 32px; align-items: center; border: 1px solid #2c2c2e; border-radius: 16px; background: #1c1c1e; transition: border-color .2s, background .2s; }
 .search-form:focus-within { border-color: #5a5a5f; background: #202023; }
 .search-form input { width: 100%; min-width: 0; border: 0; outline: 0; padding: 13px 4px; background: transparent; color: #f5f5f7; font-size: 16px; }
@@ -37,7 +45,7 @@ h2 { font-size: 22px; letter-spacing: -.025em; }
 .search-results-heading { display: flex; align-items: baseline; justify-content: space-between; padding: 0 6px 7px; }
 .search-results-heading h2 { font-size: 18px; }
 .search-results-heading span { color: #8e8e93; font-size: 12px; }
-.search-result-list { display: grid; grid-auto-flow: column; grid-template-rows: repeat(5, auto); grid-auto-columns: calc(100% - 30px); gap: 2px 12px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x mandatory; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.search-result-list { display: grid; grid-auto-flow: column; grid-template-rows: repeat(5, auto); grid-auto-columns: calc(100% - 30px); gap: 2px 12px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x mandatory; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
 .search-result-list::-webkit-scrollbar { display: none; }
 .search-result-list .track-row { grid-template-columns: 42px minmax(0,1fr) auto; padding: 7px 6px; }
 .search-result-list .track-row:nth-child(5n + 1) { scroll-snap-align: start; }
@@ -137,6 +145,7 @@ h2 { font-size: 22px; letter-spacing: -.025em; }
 
 /* Albums and playlists */
 .personal-library { margin-top: 24px; }
+.library-home-view { padding-top: 8px; }
 .library-switcher { max-width: 340px; margin: 14px 0 12px; }
 .album-grid { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(128px, 42%); gap: 12px; overflow-x: auto; padding: 2px 1px 8px; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .album-grid::-webkit-scrollbar { display: none; }
@@ -195,4 +204,9 @@ body.sheet-open { overflow: hidden; }
   .collection-hero { grid-template-columns: 230px minmax(0,1fr); align-items: end; text-align: left; }
   .collection-cover { width: 230px; }
   .collection-actions { margin-left: 250px; }
+}
+
+@media (max-height: 720px) {
+  .mascot-hero { height: 180px; }
+  .mascot-hero img { width: 190px; height: 190px; }
 }

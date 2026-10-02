@@ -18,11 +18,11 @@ const elementIds = [
   "collectionArtist", "collectionBackButton", "collectionCover", "collectionKind", "collectionKicker", "collectionMeta",
   "collectionMixButton", "collectionPlayButton", "collectionScreen", "collectionShuffleButton", "collectionTitle", "collectionTrackList",
   "coverFallback", "coverImage", "currentTime", "duration", "fullPlayer", "libraryAlbumList", "libraryPlaylistList",
-  "librarySwitcher", "mainScreen", "miniCoverFallback", "miniCoverImage", "miniNextButton", "miniPlayButton", "miniPlayer",
+  "homeTabs", "libraryHomeView", "librarySwitcher", "mainScreen", "miniCoverFallback", "miniCoverImage", "miniNextButton", "miniPlayButton", "miniPlayer",
   "miniProgress", "miniTrackArtist", "miniTrackTitle", "nextButton", "openPlayerButton", "personalLibraryCount", "playButton",
   "playerMixButton", "previousButton", "resultFilters", "searchAlbumGroup", "searchAlbumList", "searchForm", "searchInput",
   "searchResultCount", "searchResultList", "searchResults", "searchSuggestions", "searchTrackGroup", "sectionTabs", "sectionTitle",
-  "seek", "settingsButton", "setupForm", "setupPanel", "status", "trackActionSheet", "trackArtist", "trackCount", "trackLabel",
+  "searchHomeView", "seek", "settingsButton", "setupForm", "setupPanel", "status", "trackActionSheet", "trackArtist", "trackCount", "trackLabel",
   "trackList", "trackTitle",
 ];
 const elements = Object.fromEntries(elementIds.map((id) => [id, document.getElementById(id)]));
@@ -45,7 +45,7 @@ const state = {
   sections: [], currentSectionId: null, libraryTracks: [], libraryView: "albums",
   searchTracks: [], searchAlbums: [], searchTotal: 0, searchQuery: "", searchActive: false, searchFilter: "all",
   playbackQueue: [], currentTrackKey: null, currentTrack: null,
-  currentView: "home", currentCollection: null, actionTrack: null,
+  currentView: "home", homeTab: "search", currentCollection: null, actionTrack: null,
   suggestionTimer: null, suggestionRequestId: 0,
 };
 
@@ -135,6 +135,18 @@ function showPlayer(show = true) {
   if (show && !state.currentTrack) return;
   elements.fullPlayer.hidden = !show;
   document.body.classList.toggle("player-open", show);
+}
+function setHomeTab(tab) {
+  state.homeTab = tab === "library" ? "library" : "search";
+  const showingSearch = state.homeTab === "search";
+  elements.searchHomeView.hidden = !showingSearch;
+  elements.libraryHomeView.hidden = showingSearch;
+  elements.homeTabs.querySelectorAll("[data-home-tab]").forEach((button) => {
+    const active = button.dataset.homeTab === state.homeTab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  window.scrollTo({ top: 0, behavior: "auto" });
 }
 function showView(view, collection = null) {
   state.currentView = view;
@@ -261,7 +273,7 @@ function renderSearchResults() {
     elements.searchResultList.replaceChildren(); elements.searchAlbumList.replaceChildren(); elements.searchResultCount.textContent = ""; return;
   }
   const showTracks = state.searchFilter !== "albums"; const showAlbums = state.searchFilter !== "tracks";
-  const visibleTracks = state.searchTracks.slice(0, state.searchFilter === "all" ? 5 : SEARCH_RESULT_LIMIT);
+  const visibleTracks = state.searchTracks.slice(0, SEARCH_RESULT_LIMIT);
   elements.searchTrackGroup.hidden = !showTracks || !visibleTracks.length; elements.searchAlbumGroup.hidden = !showAlbums || !state.searchAlbums.length;
   elements.searchResultCount.textContent = `${state.searchTotal} треков · ${state.searchAlbums.length} альбомов`;
   elements.searchResultList.replaceChildren(...visibleTracks.map((track) => createTrackRow(track, state.searchTracks.slice(0, SEARCH_RESULT_LIMIT))));
@@ -441,6 +453,7 @@ elements.setupForm.addEventListener("submit", async (event) => {
 });
 elements.settingsButton.addEventListener("click", () => showSetup(true));
 elements.closeSetupButton.addEventListener("click", () => showSetup(false));
+elements.homeTabs.addEventListener("click", (event) => { if (event.target.dataset.homeTab) setHomeTab(event.target.dataset.homeTab); });
 elements.searchForm.addEventListener("submit", (event) => { event.preventDefault(); searchMusic(elements.searchInput.value); elements.searchInput.blur(); });
 elements.searchInput.addEventListener("input", scheduleSuggestions); elements.searchInput.addEventListener("focus", scheduleSuggestions);
 elements.clearSearchButton.addEventListener("click", () => clearSearch(true));
@@ -486,4 +499,4 @@ if (!state.config.backendUrl || LEGACY_BACKEND_URLS.has(state.config.backendUrl)
   state.config.backendUrl = defaultBackendUrl; localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(state.config));
 }
 elements.backendUrlInput.value = state.config.backendUrl; elements.apiKeyInput.value = state.config.apiKey || "";
-renderPersonalLibrary(); loadLibrary();
+setHomeTab(state.homeTab); renderPersonalLibrary(); loadLibrary();
