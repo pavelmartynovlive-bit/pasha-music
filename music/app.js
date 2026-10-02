@@ -18,7 +18,7 @@ const elementIds = [
   "collectionArtist", "collectionBackButton", "collectionCover", "collectionKind", "collectionKicker", "collectionMeta",
   "collectionMixButton", "collectionPlayButton", "collectionScreen", "collectionShuffleButton", "collectionTitle", "collectionTrackList",
   "coverFallback", "coverImage", "currentTime", "duration", "fullPlayer", "libraryAlbumList", "libraryPlaylistList",
-  "homeTabs", "libraryHomeView", "librarySwitcher", "mainScreen", "miniCoverFallback", "miniCoverImage", "miniNextButton", "miniPlayButton", "miniPlayer",
+  "homeTabs", "libraryHomeView", "librarySwitcher", "mainScreen", "miniCoverFallback", "miniCoverImage", "miniMixButton", "miniNextButton", "miniPlayButton", "miniPlayer",
   "miniProgress", "miniTrackArtist", "miniTrackTitle", "nextButton", "openPlayerButton", "personalLibraryCount", "playButton",
   "playerMixButton", "previousButton", "searchAlbumGroup", "searchAlbumList", "searchForm", "searchInput",
   "searchResultList", "searchResults", "searchSuggestions", "searchTrackGroup", "sectionTabs", "sectionTitle",
@@ -499,8 +499,15 @@ elements.closeSetupButton.addEventListener("click", () => showSetup(false));
 elements.homeTabs.addEventListener("click", (event) => { const button = event.target.closest("[data-home-tab]"); if (button) { setHomeTab(button.dataset.homeTab); if (state.homeTab === "search") focusSearchInput(); } });
 elements.searchForm.addEventListener("submit", (event) => { event.preventDefault(); searchMusic(elements.searchInput.value); elements.searchInput.blur(); });
 elements.searchInput.addEventListener("pointerdown", lockSearchViewport);
-elements.searchInput.addEventListener("input", scheduleSuggestions);
-elements.searchInput.addEventListener("focus", () => { lockSearchViewport(); scheduleSuggestions(); });
+function hideSearchSuggestions() {
+  clearTimeout(state.suggestionTimer);
+  state.suggestionRequestId += 1;
+  elements.clearSearchButton.hidden = !elements.searchInput.value.trim();
+  elements.searchSuggestions.hidden = true;
+  elements.searchSuggestions.replaceChildren();
+}
+elements.searchInput.addEventListener("input", hideSearchSuggestions);
+elements.searchInput.addEventListener("focus", () => { lockSearchViewport(); hideSearchSuggestions(); });
 elements.searchInput.addEventListener("blur", unlockSearchViewport);
 elements.clearSearchButton.addEventListener("click", () => clearSearch(true));
 elements.librarySwitcher.addEventListener("click", (event) => { if (event.target.dataset.libraryView) { state.libraryView = event.target.dataset.libraryView; renderPersonalLibrary(); } });
@@ -510,6 +517,7 @@ elements.collectionShuffleButton.addEventListener("click", () => { const tracks 
 elements.collectionMixButton.addEventListener("click", () => { if (state.currentView === "album") createAndOpenMix({ kind: "album", album: state.currentCollection }); });
 elements.openPlayerButton.addEventListener("click", () => showPlayer(true)); elements.closePlayerButton.addEventListener("click", () => showPlayer(false));
 elements.playerMixButton.addEventListener("click", () => { if (state.currentTrack) createAndOpenMix({ kind: "track", track: state.currentTrack }); });
+elements.miniMixButton.addEventListener("click", () => { if (state.currentTrack) createAndOpenMix({ kind: "track", track: state.currentTrack }); });
 elements.actionSheetMixButton.addEventListener("click", () => { if (state.actionTrack) createAndOpenMix({ kind: "track", track: state.actionTrack }); });
 elements.actionSheetCloseButton.addEventListener("click", closeTrackActions); elements.actionSheetBackdrop.addEventListener("click", closeTrackActions);
 elements.playButton.addEventListener("click", () => {
