@@ -3,6 +3,7 @@
 html, body { margin: 0; min-height: 100%; background: #06060f; }
 body { min-height: 100dvh; background: linear-gradient(to right, #041634 0%, #08091d 52%, #06060f 100%); background-attachment: fixed; }
 body.player-open { overflow: hidden; }
+body.search-input-active { position: fixed; left: 0; right: 0; width: 100%; overflow: hidden; }
 button, input { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
 .app-shell { max-width: 620px; margin: 0 auto; padding: max(22px, env(safe-area-inset-top)) 20px max(126px, calc(env(safe-area-inset-bottom) + 106px)); }
@@ -118,6 +119,7 @@ h2 { font-size: 22px; letter-spacing: -.025em; }
 .control { width: 52px; font-size: 48px; font-weight: 200; line-height: 1; opacity: .8; }
 .play { width: 72px; height: 72px; border-radius: 50%; background: #f5f5f7; color: #0b0b0c; font-size: 24px; }
 .status { min-height: 18px; margin-top: 12px; color: #8e8e93; font-size: 13px; text-align: center; }
+.status[hidden] { display: none; }
 .status.error { color: #ff9f9a; }
 .library { margin-top: 24px; }
 .section-title span { color: #8e8e93; font-size: 14px; }

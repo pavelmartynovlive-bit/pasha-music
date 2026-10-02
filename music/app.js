@@ -74,16 +74,30 @@ const CYRILLIC_TO_LATIN = {
 
 function setStatus(message, isError = false) {
   elements.status.textContent = message;
+  elements.status.hidden = !message;
   elements.status.classList.toggle("error", isError);
 }
 function saveLibrary() { localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(state.library)); }
 function showSetup(show = true) { elements.setupPanel.hidden = !show; if (show) elements.backendUrlInput.focus(); }
-function focusSearchInput(showKeyboard = false) {
+let searchViewportScrollY = null;
+function lockSearchViewport() {
+  if (searchViewportScrollY !== null) return;
+  searchViewportScrollY = window.scrollY;
+  document.body.style.top = `-${searchViewportScrollY}px`;
+  document.body.classList.add("search-input-active");
+}
+function unlockSearchViewport() {
+  if (searchViewportScrollY === null) return;
+  const restoreScrollY = searchViewportScrollY;
+  searchViewportScrollY = null;
+  document.body.classList.remove("search-input-active");
+  document.body.style.top = "";
+  window.scrollTo({ top: restoreScrollY, behavior: "auto" });
+}
+function focusSearchInput() {
   if (state.currentView !== "home" || state.homeTab !== "search" || !elements.setupPanel.hidden) return;
+  lockSearchViewport();
   elements.searchInput.focus({ preventScroll: true });
-  if (showKeyboard && navigator.virtualKeyboard?.show) {
-    try { navigator.virtualKeyboard.show(); } catch {}
-  }
 }
 function normalizeBackendUrl(value) {
   const url = new URL(value.trim());
@@ -339,7 +353,7 @@ async function loadSection(sectionId) {
     const data = await api(`/api/sections/${encodeURIComponent(sectionId)}`);
     state.libraryTracks = data.result.tracks || []; elements.sectionTitle.textContent = data.result.title || "Треки";
     mergeAlbumsFromTracks(state.libraryTracks, true); renderLibraryTracks(); renderPersonalLibrary();
-    setStatus(state.libraryTracks.length ? "Готово к воспроизведению" : "Раздел пуст");
+    setStatus(state.libraryTracks.length ? "" : "Раздел пуст");
   } catch (error) { setStatus(error.message, true); showSetup(error.message.includes("ключ") || error.message.includes("backend")); }
 }
 async function searchMusic(query) {
@@ -362,7 +376,7 @@ function clearSearch(clearInput = true) {
   clearTimeout(state.suggestionTimer); state.suggestionRequestId += 1; if (clearInput) elements.searchInput.value = "";
   elements.clearSearchButton.hidden = true; elements.searchSuggestions.hidden = true;
   Object.assign(state, { searchActive: false, searchTracks: [], searchAlbums: [], searchTotal: 0, searchQuery: "" }); renderSearchResults();
-  if (clearInput && elements.audio.paused) setStatus("Готово к воспроизведению");
+  if (clearInput && elements.audio.paused) setStatus("");
 }
 async function loadLibrary() {
   try {
@@ -482,9 +496,12 @@ elements.setupForm.addEventListener("submit", async (event) => {
 });
 elements.settingsButton.addEventListener("click", () => showSetup(true));
 elements.closeSetupButton.addEventListener("click", () => showSetup(false));
-elements.homeTabs.addEventListener("click", (event) => { const button = event.target.closest("[data-home-tab]"); if (button) { setHomeTab(button.dataset.homeTab); if (state.homeTab === "search") focusSearchInput(true); } });
+elements.homeTabs.addEventListener("click", (event) => { const button = event.target.closest("[data-home-tab]"); if (button) { setHomeTab(button.dataset.homeTab); if (state.homeTab === "search") focusSearchInput(); } });
 elements.searchForm.addEventListener("submit", (event) => { event.preventDefault(); searchMusic(elements.searchInput.value); elements.searchInput.blur(); });
-elements.searchInput.addEventListener("input", scheduleSuggestions); elements.searchInput.addEventListener("focus", scheduleSuggestions);
+elements.searchInput.addEventListener("pointerdown", lockSearchViewport);
+elements.searchInput.addEventListener("input", scheduleSuggestions);
+elements.searchInput.addEventListener("focus", () => { lockSearchViewport(); scheduleSuggestions(); });
+elements.searchInput.addEventListener("blur", unlockSearchViewport);
 elements.clearSearchButton.addEventListener("click", () => clearSearch(true));
 elements.librarySwitcher.addEventListener("click", (event) => { if (event.target.dataset.libraryView) { state.libraryView = event.target.dataset.libraryView; renderPersonalLibrary(); } });
 elements.collectionBackButton.addEventListener("click", () => showView("home"));
@@ -529,5 +546,4 @@ if (!state.config.backendUrl || LEGACY_BACKEND_URLS.has(state.config.backendUrl)
   state.config.backendUrl = defaultBackendUrl; localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(state.config));
 }
 elements.backendUrlInput.value = state.config.backendUrl; elements.apiKeyInput.value = state.config.apiKey || "";
-setHomeTab(state.homeTab); focusSearchInput(true); renderPersonalLibrary(); loadLibrary();
-window.addEventListener("pageshow", () => focusSearchInput(true), { once: true });
+setHomeTab(state.homeTab); renderPersonalLibrary(); loadLibrary();
