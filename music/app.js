@@ -14,7 +14,7 @@ const LEGACY_BACKEND_URLS = new Set(["https://pasha-vk-music-backend.onrender.co
 
 const elementIds = [
   "actionSheetArtist", "actionSheetBackdrop", "actionSheetCloseButton", "actionSheetMixButton", "actionSheetTitle",
-  "apiKeyInput", "audio", "backendUrlInput", "clearSearchButton", "closePlayerButton", "closeSetupButton",
+  "apiKeyInput", "audio", "backendUrlInput", "catMascot", "clearSearchButton", "closePlayerButton", "closeSetupButton",
   "collectionArtist", "collectionBackButton", "collectionCover", "collectionKind", "collectionKicker", "collectionMeta",
   "collectionMixButton", "collectionPlayButton", "collectionScreen", "collectionShuffleButton", "collectionTitle", "collectionTrackList",
   "coverFallback", "coverImage", "currentTime", "duration", "fullPlayer", "libraryAlbumList", "libraryPlaylistList",
@@ -153,6 +153,8 @@ function showView(view, collection = null) {
   state.currentCollection = collection;
   elements.mainScreen.hidden = view !== "home";
   elements.collectionScreen.hidden = view === "home";
+  elements.homeTabs.hidden = view !== "home";
+  document.body.classList.toggle("detail-open", view !== "home");
   window.scrollTo({ top: 0, behavior: "auto" });
 }
 function setPlaybackButtonState(isPlaying) {
@@ -160,6 +162,7 @@ function setPlaybackButtonState(isPlaying) {
   const symbol = isPlaying ? "❚❚" : "▶";
   elements.playButton.textContent = symbol; elements.miniPlayButton.textContent = symbol;
   elements.playButton.setAttribute("aria-label", label); elements.miniPlayButton.setAttribute("aria-label", label);
+  elements.catMascot.classList.toggle("is-playing", isPlaying);
 }
 function normalizeSearchText(value) {
   return value.toLocaleLowerCase("ru").split("").map((letter) => CYRILLIC_TO_LATIN[letter] ?? letter).join("").replace(/[^a-z0-9]+/g, "");
@@ -483,7 +486,7 @@ elements.audio.addEventListener("timeupdate", () => {
   elements.seek.value = String(progress); elements.miniProgress.style.width = `${progress}%`;
 });
 elements.audio.addEventListener("ended", () => moveTrack(1));
-elements.audio.addEventListener("error", () => setStatus("Не удалось открыть аудио. Обновите раздел и попробуйте снова.", true));
+elements.audio.addEventListener("error", () => { setPlaybackButtonState(false); setStatus("Не удалось открыть аудио. Обновите раздел и попробуйте снова.", true); });
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (!elements.trackActionSheet.hidden) closeTrackActions(); else if (!elements.fullPlayer.hidden) showPlayer(false); else if (state.currentView !== "home") showView("home");
