@@ -93,10 +93,10 @@ h2 { font-size: 22px; letter-spacing: -.025em; }
 .suggestion-chip { max-width: 100%; overflow: hidden; border: 1px solid #343438; border-radius: 999px; padding: 8px 12px; background: #171719; color: #c7c7cc; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .suggestion-chip:active { border-color: #f5f5f7; background: #f5f5f7; color: #0b0b0c; }
 .search-results { margin-top: 14px; }
-.search-result-list { display: grid; grid-auto-flow: column; grid-template-rows: repeat(5, auto); grid-auto-columns: calc(100% - 30px); gap: 2px 12px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x mandatory; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
+.search-result-list { display: grid; grid-auto-flow: column; grid-template-rows: repeat(4, auto); grid-auto-columns: calc(100% - 30px); gap: 2px 12px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x mandatory; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
 .search-result-list::-webkit-scrollbar { display: none; }
 .search-result-list .track-row { grid-template-columns: 42px minmax(0,1fr) auto; padding: 7px 6px; }
-.search-result-list .track-row:nth-child(5n + 1) { scroll-snap-align: start; }
+.search-result-list .track-row:nth-child(4n + 1) { scroll-snap-align: start; }
 .search-result-list .track-row img, .search-result-list .track-art-fallback { width: 42px; height: 42px; border-radius: 9px; }
 .search-empty { padding: 20px 8px; color: #8e8e93; font-size: 14px; text-align: center; }
 .cover { aspect-ratio: 1; display: grid; place-items: center; overflow: hidden; border-radius: 24px; background: linear-gradient(145deg, rgba(255,255,255,.15), rgba(255,255,255,.03)), #1c1c1e; box-shadow: 0 25px 80px rgba(0,0,0,.35); }
