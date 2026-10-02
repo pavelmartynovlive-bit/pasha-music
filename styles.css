@@ -28,7 +28,7 @@ h2 { font-size: 22px; letter-spacing: -.025em; }
 .setup-note { margin-top: 12px; color: #8e8e93; font-size: 12px; line-height: 1.45; }
 .search-home-view { padding-top: 4px; }
 .mascot-hero { height: auto; display: grid; place-items: center; margin-bottom: 24px; overflow: visible; }
-.cat-mascot { width: min(78vw, 310px); height: min(78vw, 310px); display: grid; place-items: center; overflow: hidden; }
+.cat-mascot { width: 200px; height: 200px; display: grid; place-items: center; overflow: hidden; }
 .cat-mascot-image, .cat-mascot-video, .cat-mascot-svg { width: 100%; height: 100%; grid-area: 1 / 1; transition: opacity .18s ease; }
 .cat-mascot-image, .cat-mascot-video { object-fit: cover; object-position: center center; transform: scale(1.06); transform-origin: center bottom; }
 .cat-mascot-svg { display: none; }
@@ -259,8 +259,4 @@ body.sheet-open { overflow: hidden; }
   .collection-hero { grid-template-columns: 230px minmax(0,1fr); align-items: end; text-align: left; }
   .collection-cover { width: 230px; }
   .collection-actions { margin-left: 250px; }
-}
-
-@media (max-height: 720px) {
-  .cat-mascot { width: 200px; height: 200px; }
 }
