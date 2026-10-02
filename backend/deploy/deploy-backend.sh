@@ -27,7 +27,9 @@ if test -d "$TARGET_DIR"; then mv "$TARGET_DIR" "$BACKUP_DIR"; fi
 mv "$RELEASE_DIR" "$TARGET_DIR"
 
 if systemctl restart "$SERVICE_NAME" && \
-  curl --fail --silent --show-error --retry 8 --retry-delay 2 http://127.0.0.1:8787/healthz >/dev/null; then
+  curl --fail --silent --show-error \
+    --retry 8 --retry-delay 2 --retry-all-errors \
+    http://127.0.0.1:8787/healthz >/dev/null; then
   rm -rf "$BACKUP_DIR"
   echo "Backend deployment completed"
   exit 0
