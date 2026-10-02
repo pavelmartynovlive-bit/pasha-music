@@ -1,5 +1,5 @@
-const CACHE = "pasha-music-github-pages-v21";
-const APP_SHELL = ["./", "./music/", "./music/app.js", "./music/assets/cat-idle.webm", "./music/assets/cat-playing.webm", "./styles.css", "./manifest.webmanifest", "./icons/icon-180.png", "./icons/icon-512.png"];
+const CACHE = "pasha-music-github-pages-v22";
+const APP_SHELL = ["./", "./music/", "./music/app.js", "./music/assets/cat-idle.webm", "./music/assets/cat-playing.webm", "./styles.css?v=22", "./manifest.webmanifest", "./icons/icon-180.png", "./icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL.map((path) => new URL(path, self.registration.scope)))));
@@ -14,7 +14,8 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== "GET" || url.origin !== self.location.origin) return;
-  event.respondWith(fetch(event.request).then((response) => {
+  const networkRequest = new Request(event.request, { cache: "no-store" });
+  event.respondWith(fetch(networkRequest).then((response) => {
     const copy = response.clone();
     caches.open(CACHE).then((cache) => cache.put(event.request, copy));
     return response;
