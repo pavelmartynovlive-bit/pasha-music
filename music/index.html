@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Music" />
-  <link rel="stylesheet" href="../styles.css?v=33" />
+  <link rel="stylesheet" href="../styles.css?v=34" />
   <title>Pasha Music</title>
 </head>
 <body>
@@ -17,10 +17,10 @@
     <header class="home-header">
       <nav class="compact-tabs" id="homeTabs" aria-label="Главные разделы">
         <button class="compact-tab active" type="button" data-home-tab="search" aria-label="Поиск" aria-selected="true">
-          <svg class="metal-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.4 15.4 4.6 4.6"/></svg>
+          <span class="compact-tab-emoji" aria-hidden="true">🔍</span>
         </button>
         <button class="compact-tab" type="button" data-home-tab="library" aria-label="Моя музыка" aria-selected="false">
-          <svg class="metal-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1.35"/><circle cx="4" cy="12" r="1.35"/><circle cx="4" cy="18" r="1.35"/></svg>
+          <span class="compact-tab-emoji" aria-hidden="true">🤍</span>
         </button>
       </nav>
       <button class="icon-button" id="settingsButton" type="button" aria-label="Настройки подключения">⚙</button>
@@ -97,7 +97,7 @@
       <div class="search-area">
         <form class="search-form" id="searchForm" role="search">
           <button class="search-submit" type="submit" aria-label="Найти музыку">⌕</button>
-          <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="Трек или исполнитель" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" aria-label="Поиск музыки" aria-controls="searchSuggestions searchResults" />
+          <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="Трек или исполнитель" autocomplete="off" aria-label="Поиск музыки" aria-controls="searchSuggestions searchResults" />
           <button class="search-clear" id="clearSearchButton" type="button" aria-label="Очистить поиск" hidden>×</button>
         </form>
 
@@ -210,6 +210,6 @@
     </div>
   </section>
   <audio id="audio" preload="metadata" playsinline></audio>
-  <script type="module" src="./app.js?v=31"></script>
+  <script type="module" src="./app.js?v=34"></script>
 </body>
 </html>

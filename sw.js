@@ -1,5 +1,5 @@
-const CACHE = "pasha-music-github-pages-v33";
-const APP_SHELL = ["./", "./music/", "./music/app.js?v=31", "./music/assets/cat-idle.webp", "./music/assets/cat-playing.webp?v=2", "./styles.css?v=33", "./manifest.webmanifest", "./icons/icon-180.png", "./icons/icon-512.png"];
+const CACHE = "pasha-music-github-pages-v34";
+const APP_SHELL = ["./", "./music/", "./music/app.js?v=34", "./music/assets/cat-idle.webp", "./music/assets/cat-playing.webp?v=2", "./styles.css?v=34", "./manifest.webmanifest", "./icons/icon-180.png", "./icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL.map((path) => new URL(path, self.registration.scope)))));

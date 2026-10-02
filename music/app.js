@@ -520,15 +520,8 @@ elements.closeSetupButton.addEventListener("click", () => showSetup(false));
 elements.homeTabs.addEventListener("click", (event) => { const button = event.target.closest("[data-home-tab]"); if (button) { setHomeTab(button.dataset.homeTab); if (state.homeTab === "search") focusSearchInput(); } });
 elements.searchForm.addEventListener("submit", (event) => { event.preventDefault(); searchMusic(elements.searchInput.value); elements.searchInput.blur(); });
 elements.searchInput.addEventListener("pointerdown", lockSearchViewport);
-function hideSearchSuggestions() {
-  clearTimeout(state.suggestionTimer);
-  state.suggestionRequestId += 1;
-  elements.clearSearchButton.hidden = !elements.searchInput.value.trim();
-  elements.searchSuggestions.hidden = true;
-  elements.searchSuggestions.replaceChildren();
-}
-elements.searchInput.addEventListener("input", hideSearchSuggestions);
-elements.searchInput.addEventListener("focus", () => { lockSearchViewport(); hideSearchSuggestions(); });
+elements.searchInput.addEventListener("input", scheduleSuggestions);
+elements.searchInput.addEventListener("focus", () => { lockSearchViewport(); scheduleSuggestions(); });
 elements.searchInput.addEventListener("blur", unlockSearchViewport);
 window.visualViewport?.addEventListener("resize", syncSearchViewport);
 window.visualViewport?.addEventListener("scroll", syncSearchViewport);
