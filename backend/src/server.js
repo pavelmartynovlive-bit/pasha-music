@@ -194,11 +194,11 @@ function normalizeSection(raw) {
   };
 }
 
-async function getTrackRecommendations(vk, { audioId, count }) {
+async function getTrackRecommendations(vk, { ownerId, audioId, count }) {
   const result = await vk.request(
     "audio.getRecommendations",
     vk.createBody({
-      target_id: String(audioId),
+      target_audio: `${ownerId}_${audioId}`,
       count: String(count),
       offset: "0",
     })
@@ -422,6 +422,7 @@ app.get("/api/tracks/:ownerId/:audioId/recommendations", async (req, res) => {
   try {
     const vk = makeVkAudio();
     const recommendations = await getTrackRecommendations(vk, {
+      ownerId,
       audioId,
       count: limit,
     });
