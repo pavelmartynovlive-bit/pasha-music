@@ -34,6 +34,7 @@ jobs:
             -o BatchMode=yes -o IdentitiesOnly=yes \
             backend/deploy/deploy-backend.sh \
             backend/deploy/install-deploy-access.sh \
+            backend/deploy/rotate-root-access.sh \
             "root@$VPS_HOST:/tmp/"
 
       - name: Install restricted deploy account
@@ -44,4 +45,4 @@ jobs:
           ssh -i ~/.ssh/pasha_music_bootstrap \
             -o BatchMode=yes -o IdentitiesOnly=yes \
             "root@$VPS_HOST" \
-            "chmod 755 /tmp/deploy-backend.sh /tmp/install-deploy-access.sh && DEPLOY_PUBLIC_KEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILXe4U69Ke8MaI28PPX/bwu3MqGYL+TIzE9rolWdSA6n github-actions-pasha-music' /tmp/install-deploy-access.sh && rm -f /tmp/deploy-backend.sh /tmp/install-deploy-access.sh && id pasha-deploy && systemctl is-active pasha-music && systemctl is-active antizapret"
+            "chmod 755 /tmp/deploy-backend.sh /tmp/install-deploy-access.sh /tmp/rotate-root-access.sh && DEPLOY_PUBLIC_KEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILXe4U69Ke8MaI28PPX/bwu3MqGYL+TIzE9rolWdSA6n github-actions-pasha-music' /tmp/install-deploy-access.sh && OLD_ROOT_PUBLIC_KEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAswv3YW2OVFLN/qxLPJyA9CxfgAfNZLiJ5SKXYqb05b pasha-music-firstbyte' NEW_ROOT_PUBLIC_KEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIL4ek7bgEonWfuWjnwgcAGi7Waa/k1S9Q0Y+8xNXUPT pasha-music-firstbyte-admin-v2' /tmp/rotate-root-access.sh && rm -f /tmp/deploy-backend.sh /tmp/install-deploy-access.sh /tmp/rotate-root-access.sh && id pasha-deploy && systemctl is-active pasha-music && systemctl is-active antizapret"
