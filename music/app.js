@@ -30,8 +30,8 @@ const elements = Object.fromEntries(elementIds.map((id) => [id, document.getElem
 class CatMascot {
   constructor(element) {
     this.element = element;
-    this.video = element.querySelector(".cat-mascot-video");
-    this.svg = element.querySelector(".cat-mascot-svg");
+    this.idleVideo = element.querySelector(".cat-mascot-idle");
+    this.playingVideo = element.querySelector(".cat-mascot-playing");
     this.isPlaying = false;
   }
 
@@ -41,12 +41,10 @@ class CatMascot {
     this._isPlaying = Boolean(value);
     const stateName = this._isPlaying ? "playing" : "idle";
     this.element.dataset.state = stateName;
-    this.svg.dataset.state = stateName;
-    if (this._isPlaying) {
-      this.video.pause();
-    } else {
-      this.video.play().catch(() => {});
-    }
+    const activeVideo = this._isPlaying ? this.playingVideo : this.idleVideo;
+    const inactiveVideo = this._isPlaying ? this.idleVideo : this.playingVideo;
+    inactiveVideo.pause();
+    activeVideo.play().catch(() => {});
   }
 }
 
