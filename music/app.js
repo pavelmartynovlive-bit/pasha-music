@@ -78,6 +78,13 @@ function setStatus(message, isError = false) {
 }
 function saveLibrary() { localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(state.library)); }
 function showSetup(show = true) { elements.setupPanel.hidden = !show; if (show) elements.backendUrlInput.focus(); }
+function focusSearchInput(showKeyboard = false) {
+  if (state.currentView !== "home" || state.homeTab !== "search" || !elements.setupPanel.hidden) return;
+  elements.searchInput.focus({ preventScroll: true });
+  if (showKeyboard && navigator.virtualKeyboard?.show) {
+    try { navigator.virtualKeyboard.show(); } catch {}
+  }
+}
 function normalizeBackendUrl(value) {
   const url = new URL(value.trim());
   const isLocal = ["localhost", "127.0.0.1"].includes(url.hostname);
@@ -475,7 +482,7 @@ elements.setupForm.addEventListener("submit", async (event) => {
 });
 elements.settingsButton.addEventListener("click", () => showSetup(true));
 elements.closeSetupButton.addEventListener("click", () => showSetup(false));
-elements.homeTabs.addEventListener("click", (event) => { const button = event.target.closest("[data-home-tab]"); if (button) setHomeTab(button.dataset.homeTab); });
+elements.homeTabs.addEventListener("click", (event) => { const button = event.target.closest("[data-home-tab]"); if (button) { setHomeTab(button.dataset.homeTab); if (state.homeTab === "search") focusSearchInput(true); } });
 elements.searchForm.addEventListener("submit", (event) => { event.preventDefault(); searchMusic(elements.searchInput.value); elements.searchInput.blur(); });
 elements.searchInput.addEventListener("input", scheduleSuggestions); elements.searchInput.addEventListener("focus", scheduleSuggestions);
 elements.clearSearchButton.addEventListener("click", () => clearSearch(true));
@@ -522,4 +529,5 @@ if (!state.config.backendUrl || LEGACY_BACKEND_URLS.has(state.config.backendUrl)
   state.config.backendUrl = defaultBackendUrl; localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(state.config));
 }
 elements.backendUrlInput.value = state.config.backendUrl; elements.apiKeyInput.value = state.config.apiKey || "";
-setHomeTab(state.homeTab); renderPersonalLibrary(); loadLibrary();
+setHomeTab(state.homeTab); focusSearchInput(true); renderPersonalLibrary(); loadLibrary();
+window.addEventListener("pageshow", () => focusSearchInput(true), { once: true });
