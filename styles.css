@@ -33,38 +33,52 @@ h2 { font-size: 22px; letter-spacing: -.025em; }
 .cat-mascot-svg .dark-fur { fill: #4a4a55; }
 .cat-mascot-svg .ear-inner, .cat-mascot-svg .nose { fill: #ff8ea1; }
 .cat-mascot-svg .cat-line { fill: none; stroke: #4a4a55; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.cat-mascot-svg .eye { fill: #4a4a55; }
+.cat-mascot-svg .eye-glint { fill: #f9f9fb; }
 .cat-mascot-svg .headphones-main { fill: #23232d; }
 .cat-mascot-svg .headphones-accent, .cat-mascot-svg .note { fill: #8b5cf6; }
 .cat-mascot-svg .shadow { fill: #dcdcf0; opacity: .34; }
 .cat-mascot-svg g { transform-box: fill-box; }
 .cat-mascot-svg #head { transform-origin: center bottom; }
-.cat-mascot-svg #left-ear, .cat-mascot-svg #right-ear { transform-origin: center bottom; }
-.cat-mascot-svg #left-paw, .cat-mascot-svg #right-paw { transform-origin: center top; }
-.cat-mascot-svg #tail { transform-origin: left center; }
-.cat-mascot-svg #headphones, .cat-mascot-svg #body, .cat-mascot-svg #notes, .cat-mascot-svg #cat-mascot { transform-origin: center; }
+.cat-mascot-svg #leftEar, .cat-mascot-svg #rightEar { transform-origin: center bottom; }
+.cat-mascot-svg #leftPaw, .cat-mascot-svg #rightPaw { transform-origin: center top; }
+.cat-mascot-svg #tail { transform-origin: 8% 45%; }
+.cat-mascot-svg #headphones, .cat-mascot-svg #body, .cat-mascot-svg #notes { transform-origin: center; }
+/* CatMascot: idle state */
+.cat-mascot-svg #body { animation: cat-idle-breathe 3.4s ease-in-out infinite; }
+.cat-mascot-svg #head { animation: cat-idle-head 5.2s ease-in-out infinite; }
+.cat-mascot-svg #leftEar { animation: cat-idle-ear 4.8s ease-in-out infinite; }
+.cat-mascot-svg #rightEar { animation: cat-idle-ear 4.8s ease-in-out 2.4s infinite reverse; }
+.cat-mascot-svg #tail { animation: cat-idle-tail 3.8s ease-in-out infinite; }
+.cat-mascot-svg #eyesOpen { opacity: 1; animation: cat-eyes-open 5.4s steps(1, end) infinite; }
+.cat-mascot-svg #eyesClosed { opacity: 0; animation: cat-eyes-closed 5.4s steps(1, end) infinite; }
 .cat-mascot-svg #notes { opacity: 0; transform: translateY(12px) scale(.82); transition: opacity .22s ease; }
-.cat-mascot-svg.is-playing { animation: cat-stage-dance .72s ease-in-out infinite; transform-origin: 50% 86%; }
-.cat-mascot-svg.is-playing #cat-mascot { animation: cat-dance .72s ease-in-out infinite; }
-.cat-mascot-svg.is-playing #body { animation: cat-body-bounce .36s ease-in-out infinite alternate; }
-.cat-mascot-svg.is-playing #head { animation: cat-head-bob .72s ease-in-out infinite; }
-.cat-mascot-svg.is-playing #left-ear { animation: cat-left-ear .72s ease-in-out infinite; }
-.cat-mascot-svg.is-playing #right-ear { animation: cat-right-ear .72s ease-in-out infinite; }
-.cat-mascot-svg.is-playing #left-paw { animation: cat-left-step .36s ease-in-out infinite alternate; }
-.cat-mascot-svg.is-playing #right-paw { animation: cat-right-step .36s ease-in-out infinite alternate; }
-.cat-mascot-svg.is-playing #tail { animation: cat-tail-swish .72s ease-in-out infinite; }
-.cat-mascot-svg.is-playing #headphones { animation: headphone-pulse .72s ease-in-out infinite; }
-.cat-mascot-svg.is-playing #notes { opacity: .92; animation: music-notes 1.05s ease-in-out infinite; }
-@keyframes cat-stage-dance { 0%, 100% { transform: translateY(0) rotate(-1.5deg); } 50% { transform: translateY(-7px) rotate(1.5deg); } }
-@keyframes cat-dance { 0%, 100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-8px) rotate(1.5deg); } }
-@keyframes cat-body-bounce { from { transform: scale(1, 1); } to { transform: scale(1.035, .975); } }
-@keyframes cat-head-bob { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(5deg) translateY(-2px); } }
-@keyframes cat-left-ear { 0%, 100% { transform: rotate(-2deg); } 50% { transform: rotate(-10deg); } }
-@keyframes cat-right-ear { 0%, 100% { transform: rotate(2deg); } 50% { transform: rotate(10deg); } }
-@keyframes cat-left-step { from { transform: translateY(0) rotate(0); } to { transform: translateY(-11px) rotate(-7deg); } }
-@keyframes cat-right-step { from { transform: translateY(-9px) rotate(7deg); } to { transform: translateY(0) rotate(0); } }
-@keyframes cat-tail-swish { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(9deg); } }
-@keyframes headphone-pulse { 0%, 100% { filter: drop-shadow(0 0 0 rgba(139,92,246,0)); } 50% { filter: drop-shadow(0 0 8px rgba(139,92,246,.62)); } }
-@keyframes music-notes { 0%, 100% { transform: translateY(8px) scale(.9); } 50% { transform: translateY(-9px) scale(1.04); } }
+/* CatMascot: playing state — every body layer moves independently. */
+.cat-mascot-svg[data-state="playing"] #body { animation: cat-playing-body .48s ease-in-out infinite alternate; }
+.cat-mascot-svg[data-state="playing"] #head { animation: cat-playing-head .96s ease-in-out infinite; }
+.cat-mascot-svg[data-state="playing"] #leftEar { animation: cat-playing-left-ear .96s ease-in-out infinite; }
+.cat-mascot-svg[data-state="playing"] #rightEar { animation: cat-playing-right-ear .96s ease-in-out infinite; }
+.cat-mascot-svg[data-state="playing"] #leftPaw { animation: cat-playing-wave .48s ease-in-out infinite alternate; }
+.cat-mascot-svg[data-state="playing"] #rightPaw { animation: cat-playing-step .48s ease-in-out infinite alternate-reverse; }
+.cat-mascot-svg[data-state="playing"] #tail { animation: cat-playing-tail .84s ease-in-out infinite; }
+.cat-mascot-svg[data-state="playing"] #headphones { animation: cat-playing-headphones .48s cubic-bezier(.4,0,.2,1) infinite alternate; }
+.cat-mascot-svg[data-state="playing"] #notes { opacity: .92; animation: cat-playing-notes 1.05s ease-in-out infinite; }
+.cat-mascot-svg[data-state="playing"] #eyesOpen, .cat-mascot-svg[data-state="playing"] #eyesClosed { animation-duration: 3.6s; }
+@keyframes cat-idle-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.012, 1.025); } }
+@keyframes cat-idle-head { 0%, 100% { transform: rotate(-.8deg); } 50% { transform: rotate(.8deg) translateY(-1px); } }
+@keyframes cat-idle-ear { 0%, 88%, 100% { transform: rotate(0); } 92% { transform: rotate(-5deg); } 96% { transform: rotate(2deg); } }
+@keyframes cat-idle-tail { 0%, 100% { transform: rotate(-2deg); } 50% { transform: rotate(4deg); } }
+@keyframes cat-eyes-open { 0%, 91%, 95%, 100% { opacity: 1; } 92%, 94% { opacity: 0; } }
+@keyframes cat-eyes-closed { 0%, 91%, 95%, 100% { opacity: 0; } 92%, 94% { opacity: 1; } }
+@keyframes cat-playing-body { from { transform: translateY(2px) scale(1.018, .985); } to { transform: translateY(-7px) scale(.99, 1.025); } }
+@keyframes cat-playing-head { 0%, 100% { transform: translate(-2px, 1px) rotate(-5deg); } 50% { transform: translate(3px, -4px) rotate(6deg); } }
+@keyframes cat-playing-left-ear { 0%, 100% { transform: rotate(-2deg); } 35% { transform: rotate(-12deg); } 60% { transform: rotate(4deg); } }
+@keyframes cat-playing-right-ear { 0%, 100% { transform: rotate(2deg); } 50% { transform: rotate(9deg); } }
+@keyframes cat-playing-wave { from { transform: translateY(1px) rotate(1deg); } to { transform: translate(-5px, -18px) rotate(-13deg); } }
+@keyframes cat-playing-step { from { transform: translateY(0) rotate(0); } to { transform: translate(4px, -10px) rotate(9deg); } }
+@keyframes cat-playing-tail { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(13deg); } }
+@keyframes cat-playing-headphones { from { transform: translateY(1px) scale(.99); filter: drop-shadow(0 0 0 rgba(139,92,246,0)); } to { transform: translateY(-4px) scale(1.018); filter: drop-shadow(0 0 8px rgba(139,92,246,.58)); } }
+@keyframes cat-playing-notes { 0%, 100% { transform: translateY(8px) scale(.88); opacity: .48; } 50% { transform: translateY(-12px) scale(1.08); opacity: 1; } }
 .search-area { width: min(100%, 520px); margin: 0 auto; }
 .search-form { display: grid; grid-template-columns: 32px minmax(0, 1fr) 32px; align-items: center; border: 1px solid #2c2c2e; border-radius: 16px; background: #1c1c1e; transition: border-color .2s, background .2s; }
 .search-form:focus-within { border-color: #5a5a5f; background: #202023; }
@@ -243,19 +257,4 @@ body.sheet-open { overflow: hidden; }
 @media (max-height: 720px) {
   .mascot-hero { height: 190px; }
   .cat-mascot-svg { width: 200px; height: 200px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .cat-mascot-svg.is-playing #cat-mascot,
-  .cat-mascot-svg.is-playing #body,
-  .cat-mascot-svg.is-playing #head,
-  .cat-mascot-svg.is-playing #left-ear,
-  .cat-mascot-svg.is-playing #right-ear,
-  .cat-mascot-svg.is-playing #left-paw,
-  .cat-mascot-svg.is-playing #right-paw,
-  .cat-mascot-svg.is-playing #tail,
-  .cat-mascot-svg.is-playing #headphones,
-  .cat-mascot-svg.is-playing #notes { animation: none; }
-  .cat-mascot-svg.is-playing { animation: cat-stage-dance 1.25s ease-in-out infinite; }
-  .cat-mascot-svg.is-playing #notes { opacity: .9; transform: none; }
 }

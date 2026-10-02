@@ -45,9 +45,9 @@
 
     <section class="home-view search-home-view" id="searchHomeView">
       <div class="mascot-hero" aria-hidden="true">
-        <svg class="cat-mascot-svg" id="catMascot" viewBox="0 0 360 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg class="cat-mascot-svg" id="catMascot" data-state="idle" viewBox="0 0 360 360" fill="none" xmlns="http://www.w3.org/2000/svg">
           <ellipse class="shadow" cx="180" cy="315" rx="88" ry="18"/>
-          <g id="cat-mascot">
+          <g id="catLayers">
             <g id="notes">
               <g transform="translate(78 96)"><circle class="note" cx="10" cy="24" r="8"/><rect class="note" x="16" y="2" width="6" height="24" rx="3"/><path class="note" d="M22 4C34 0 40 4 40 4V12C35 9 28 9 22 12V4Z"/></g>
               <g transform="translate(264 118) rotate(8)"><circle class="note" cx="10" cy="24" r="8"/><rect class="note" x="16" y="2" width="6" height="24" rx="3"/><path class="note" d="M22 4C34 0 40 4 40 4V12C35 9 28 9 22 12V4Z"/></g>
@@ -61,15 +61,21 @@
               <path class="dark-fur" d="M120 169C127 150 140 137 154 128V278C135 269 120 246 120 214V169Z"/>
               <path class="dark-fur" d="M240 177C233 157 220 142 206 133V287C226 279 240 255 240 223V177Z"/>
             </g>
-            <g id="left-paw"><ellipse class="light-fur" cx="153" cy="291" rx="23" ry="16"/></g>
-            <g id="right-paw"><ellipse class="light-fur" cx="207" cy="291" rx="23" ry="16"/></g>
-            <g id="left-ear"><path class="dark-fur" d="M124 84C131 50 152 32 171 34C176 58 171 86 157 105Z"/><path class="ear-inner" d="M136 81C142 59 154 48 165 49C167 64 164 81 155 94Z"/></g>
-            <g id="right-ear"><path class="dark-fur" d="M236 84C229 50 208 32 189 34C184 58 189 86 203 105Z"/><path class="ear-inner" d="M224 81C218 59 206 48 195 49C193 64 196 81 205 94Z"/></g>
+            <g id="leftPaw"><ellipse class="light-fur" cx="153" cy="291" rx="23" ry="16"/></g>
+            <g id="rightPaw"><ellipse class="light-fur" cx="207" cy="291" rx="23" ry="16"/></g>
+            <g id="leftEar"><path class="dark-fur" d="M124 84C131 50 152 32 171 34C176 58 171 86 157 105Z"/><path class="ear-inner" d="M136 81C142 59 154 48 165 49C167 64 164 81 155 94Z"/></g>
+            <g id="rightEar"><path class="dark-fur" d="M236 84C229 50 208 32 189 34C184 58 189 86 203 105Z"/><path class="ear-inner" d="M224 81C218 59 206 48 195 49C193 64 196 81 205 94Z"/></g>
             <g id="head">
               <circle class="light-fur" cx="180" cy="126" r="72"/>
               <path class="dark-fur" d="M109 111C111 77 136 56 170 54C164 92 144 120 118 137C113 130 110 121 109 111Z"/>
               <path class="dark-fur" d="M250 108C250 84 238 64 216 56C214 82 222 108 238 130C246 123 250 116 250 108Z"/>
-              <path class="cat-line" d="M144 128C152 136 161 136 169 128M191 128C199 136 208 136 216 128"/>
+              <g id="eyesOpen">
+                <ellipse class="eye" cx="157" cy="130" rx="5" ry="8"/>
+                <ellipse class="eye" cx="203" cy="130" rx="5" ry="8"/>
+                <circle class="eye-glint" cx="155.5" cy="127.5" r="1.5"/>
+                <circle class="eye-glint" cx="201.5" cy="127.5" r="1.5"/>
+              </g>
+              <g id="eyesClosed"><path class="cat-line" d="M144 128C152 136 161 136 169 128M191 128C199 136 208 136 216 128"/></g>
               <path class="nose" d="M180 143C174 143 171 138 175 134H185C189 138 186 143 180 143Z"/>
               <path class="cat-line" d="M180 143V150M180 150C175 156 169 158 162 158M180 150C185 156 191 158 198 158M142 150H108M145 159H114M218 150H252M215 159H246"/>
             </g>

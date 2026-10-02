@@ -27,6 +27,22 @@ const elementIds = [
 ];
 const elements = Object.fromEntries(elementIds.map((id) => [id, document.getElementById(id)]));
 
+class CatMascot {
+  constructor(element) {
+    this.element = element;
+    this.isPlaying = false;
+  }
+
+  get isPlaying() { return this._isPlaying; }
+
+  set isPlaying(value) {
+    this._isPlaying = Boolean(value);
+    this.element.dataset.state = this._isPlaying ? "playing" : "idle";
+  }
+}
+
+const catMascot = new CatMascot(elements.catMascot);
+
 function readJson(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) || fallback; }
   catch { return fallback; }
@@ -162,7 +178,7 @@ function setPlaybackButtonState(isPlaying) {
   const symbol = isPlaying ? "❚❚" : "▶";
   elements.playButton.textContent = symbol; elements.miniPlayButton.textContent = symbol;
   elements.playButton.setAttribute("aria-label", label); elements.miniPlayButton.setAttribute("aria-label", label);
-  elements.catMascot.classList.toggle("is-playing", isPlaying);
+  catMascot.isPlaying = isPlaying;
 }
 function normalizeSearchText(value) {
   return value.toLocaleLowerCase("ru").split("").map((letter) => CYRILLIC_TO_LATIN[letter] ?? letter).join("").replace(/[^a-z0-9]+/g, "");
