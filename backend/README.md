@@ -138,6 +138,7 @@ http://localhost:8787/api/sections
 
 - `GET /api/sections/:sectionId` — треки выбранной музыкальной секции;
 - `GET /api/first-track` — первый трек из основной секции со свежим HLS URL в `result.track.fileUrl`.
+- `GET /api/tracks/:ownerId/:audioId/recommendations` — похожие треки для создания микса через внутренний VK Audio API.
 
 `fileUrl` временный: frontend должен получать его у backend непосредственно перед воспроизведением.
 

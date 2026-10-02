@@ -405,7 +405,18 @@ function uniqueTracks(tracks) { return [...new Map(tracks.filter((track) => trac
 
 const mixGenerators = {
   async track(source) {
-    const seed = source.track; const query = seed.artists?.[0]?.name || seed.artist || seed.title;
+    const seed = source.track;
+    try {
+      const data = await api(`/api/tracks/${encodeURIComponent(seed.ownerId)}/${encodeURIComponent(seed.id)}/recommendations?limit=35`);
+      const recommendations = uniqueTracks(data.result.tracks || [])
+        .filter((track) => trackKey(track) !== trackKey(seed))
+        .slice(0, 25);
+      if (recommendations.length) return recommendations;
+    } catch {
+      // The private VK endpoint may change; keep the previous artist search as a fallback.
+    }
+
+    const query = seed.artists?.[0]?.name || seed.artist || seed.title;
     const data = await api(`/api/search?q=${encodeURIComponent(query)}`);
     return uniqueTracks([...(data.result.tracks || []), ...state.libraryTracks, ...state.searchTracks]).filter((track) => trackKey(track) !== trackKey(seed)).slice(0, 25);
   },

@@ -194,6 +194,24 @@ function normalizeSection(raw) {
   };
 }
 
+async function getTrackRecommendations(vk, { audioId, count }) {
+  const result = await vk.request(
+    "audio.getRecommendations",
+    vk.createBody({
+      target_id: String(audioId),
+      count: String(count),
+      offset: "0",
+    })
+  );
+
+  if (!result.success) {
+    throw result.error;
+  }
+
+  const items = result.data?.response?.items;
+  return Array.isArray(items) ? items.map((audio) => getAudioItem(audio)) : [];
+}
+
 function albumKey(album) {
   return album ? `${album.ownerId}_${album.id}` : "";
 }
@@ -383,6 +401,52 @@ app.get("/api/search", async (req, res) => {
     });
   } catch (error) {
     sendVkError(res, error, "VK searchAudio");
+  }
+});
+
+app.get("/api/tracks/:ownerId/:audioId/recommendations", async (req, res) => {
+  if (!/^-?\d+$/.test(req.params.ownerId) || !/^\d+$/.test(req.params.audioId)) {
+    return res.status(400).json({
+      ok: false,
+      error: "Некорректный идентификатор трека",
+    });
+  }
+
+  const ownerId = Number(req.params.ownerId);
+  const audioId = Number(req.params.audioId);
+  const requestedLimit = Number.parseInt(String(req.query.limit || "30"), 10);
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.min(100, Math.max(1, requestedLimit))
+    : 30;
+
+  try {
+    const vk = makeVkAudio();
+    const recommendations = await getTrackRecommendations(vk, {
+      audioId,
+      count: limit,
+    });
+    const uniqueTracks = [
+      ...new Map(
+        recommendations
+          .filter(
+            (track) =>
+              track.fileUrl &&
+              !(track.id === audioId && track.ownerId === ownerId)
+          )
+          .map((track) => [`${track.ownerId}_${track.id}`, track])
+      ).values(),
+    ];
+
+    res.json({
+      ok: true,
+      result: {
+        sourceTrackId: `${ownerId}_${audioId}`,
+        provider: "vk",
+        tracks: uniqueTracks.slice(0, limit),
+      },
+    });
+  } catch (error) {
+    sendVkError(res, error, "VK getTrackRecommendations");
   }
 });
 
