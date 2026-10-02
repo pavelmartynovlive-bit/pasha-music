@@ -30,7 +30,6 @@ const elements = Object.fromEntries(elementIds.map((id) => [id, document.getElem
 class CatMascot {
   constructor(element) {
     this.element = element;
-    this.playingVideo = element.querySelector(".cat-mascot-playing");
     this.isPlaying = false;
   }
 
@@ -40,11 +39,6 @@ class CatMascot {
     this._isPlaying = Boolean(value);
     const stateName = this._isPlaying ? "playing" : "idle";
     this.element.dataset.state = stateName;
-    if (this._isPlaying) {
-      this.playingVideo.play().catch(() => {});
-    } else {
-      this.playingVideo.pause();
-    }
   }
 }
 
