@@ -45,7 +45,9 @@
 
     <section class="home-view search-home-view" id="searchHomeView">
       <div class="mascot-hero" aria-hidden="true">
-        <svg class="cat-mascot-svg" id="catMascot" data-state="idle" viewBox="0 0 360 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <div class="cat-mascot" id="catMascot" data-state="idle">
+          <video class="cat-mascot-video" src="./assets/cat-idle.webm" autoplay muted loop playsinline preload="auto"></video>
+          <svg class="cat-mascot-svg" data-state="idle" viewBox="0 0 360 360" fill="none" xmlns="http://www.w3.org/2000/svg">
           <ellipse class="shadow" cx="180" cy="315" rx="88" ry="18"/>
           <g id="catLayers">
             <g id="notes">
@@ -87,7 +89,8 @@
               <g transform="translate(196 176)"><ellipse class="headphones-main" cx="20" cy="20" rx="20" ry="24"/><ellipse class="headphones-accent" cx="20" cy="20" rx="15" ry="19"/><ellipse class="headphones-main" cx="20" cy="20" rx="10" ry="14"/></g>
             </g>
           </g>
-        </svg>
+          </svg>
+        </div>
       </div>
 
       <div class="search-area">
