@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Music" />
-  <link rel="stylesheet" href="../styles.css?v=31" />
+  <link rel="stylesheet" href="../styles.css?v=32" />
   <title>Pasha Music</title>
 </head>
 <body>
@@ -17,13 +17,15 @@
     <header class="home-header">
       <nav class="compact-tabs" id="homeTabs" aria-label="Главные разделы">
         <button class="compact-tab active" type="button" data-home-tab="search" aria-label="Поиск" aria-selected="true">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+          <svg class="metal-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.4 15.4 4.6 4.6"/></svg>
         </button>
         <button class="compact-tab" type="button" data-home-tab="library" aria-label="Моя музыка" aria-selected="false">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14"/><circle cx="3" cy="6" r=".8"/><circle cx="3" cy="12" r=".8"/><circle cx="3" cy="18" r=".8"/></svg>
+          <svg class="metal-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1.35"/><circle cx="4" cy="12" r="1.35"/><circle cx="4" cy="18" r="1.35"/></svg>
         </button>
       </nav>
-      <button class="icon-button" id="settingsButton" type="button" aria-label="Настройки подключения">⚙</button>
+      <button class="icon-button" id="settingsButton" type="button" aria-label="Настройки подключения">
+        <svg class="metal-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06-2.12 2.12-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V20h-3v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06-2.12-2.12.06-.06A1.65 1.65 0 0 0 7.2 15a1.65 1.65 0 0 0-1.51-1H5.6v-3h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06L8.93 6l.06.06a1.65 1.65 0 0 0 1.82.33 1.65 1.65 0 0 0 1-1.51V4.8h3v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06 2.12 2.12-.06.06A1.65 1.65 0 0 0 19.4 10c.12.61.66 1.04 1.29 1.04h.09v3h-.09c-.63 0-1.17.43-1.29 1Z"/></svg>
+      </button>
     </header>
 
     <section class="setup-panel" id="setupPanel" hidden>
