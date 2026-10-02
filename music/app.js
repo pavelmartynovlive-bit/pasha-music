@@ -79,20 +79,41 @@ function setStatus(message, isError = false) {
 }
 function saveLibrary() { localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(state.library)); }
 function showSetup(show = true) { elements.setupPanel.hidden = !show; if (show) elements.backendUrlInput.focus(); }
-let searchViewportScrollY = null;
+let searchViewportLock = null;
+function syncSearchViewport() {
+  if (!searchViewportLock || document.activeElement !== elements.searchInput) return;
+  const viewport = window.visualViewport;
+  if (!viewport) {
+    window.scrollTo({ top: searchViewportLock.scrollY, behavior: "auto" });
+    return;
+  }
+  Object.assign(elements.mainScreen.style, {
+    position: "fixed",
+    top: `${viewport.offsetTop}px`,
+    left: `${viewport.offsetLeft}px`,
+    width: `${viewport.width}px`,
+    height: `${viewport.height}px`,
+    overflow: "hidden auto",
+  });
+}
 function lockSearchViewport() {
-  if (searchViewportScrollY !== null) return;
-  searchViewportScrollY = window.scrollY;
-  document.body.style.top = `-${searchViewportScrollY}px`;
+  if (searchViewportLock) return;
+  searchViewportLock = {
+    scrollY: window.scrollY,
+    style: elements.mainScreen.getAttribute("style") || "",
+  };
   document.body.classList.add("search-input-active");
+  syncSearchViewport();
+  requestAnimationFrame(syncSearchViewport);
+  setTimeout(syncSearchViewport, 350);
 }
 function unlockSearchViewport() {
-  if (searchViewportScrollY === null) return;
-  const restoreScrollY = searchViewportScrollY;
-  searchViewportScrollY = null;
+  if (!searchViewportLock) return;
+  const { scrollY, style } = searchViewportLock;
+  searchViewportLock = null;
   document.body.classList.remove("search-input-active");
-  document.body.style.top = "";
-  window.scrollTo({ top: restoreScrollY, behavior: "auto" });
+  if (style) elements.mainScreen.setAttribute("style", style); else elements.mainScreen.removeAttribute("style");
+  requestAnimationFrame(() => window.scrollTo({ top: scrollY, behavior: "auto" }));
 }
 function focusSearchInput() {
   if (state.currentView !== "home" || state.homeTab !== "search" || !elements.setupPanel.hidden) return;
@@ -509,6 +530,8 @@ function hideSearchSuggestions() {
 elements.searchInput.addEventListener("input", hideSearchSuggestions);
 elements.searchInput.addEventListener("focus", () => { lockSearchViewport(); hideSearchSuggestions(); });
 elements.searchInput.addEventListener("blur", unlockSearchViewport);
+window.visualViewport?.addEventListener("resize", syncSearchViewport);
+window.visualViewport?.addEventListener("scroll", syncSearchViewport);
 elements.clearSearchButton.addEventListener("click", () => clearSearch(true));
 elements.librarySwitcher.addEventListener("click", (event) => { if (event.target.dataset.libraryView) { state.libraryView = event.target.dataset.libraryView; renderPersonalLibrary(); } });
 elements.collectionBackButton.addEventListener("click", () => showView("home"));

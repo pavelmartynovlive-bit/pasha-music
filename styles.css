@@ -3,7 +3,7 @@
 html, body { margin: 0; min-height: 100%; background: #06060f; }
 body { min-height: 100dvh; background: linear-gradient(to right, #041634 0%, #08091d 52%, #06060f 100%); background-attachment: fixed; }
 body.player-open { overflow: hidden; }
-body.search-input-active { position: fixed; left: 0; right: 0; width: 100%; overflow: hidden; }
+body.search-input-active { overflow: hidden; overscroll-behavior: none; }
 button, input { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
 .app-shell { max-width: 620px; margin: 0 auto; padding: max(22px, env(safe-area-inset-top)) 20px max(126px, calc(env(safe-area-inset-bottom) + 106px)); }
