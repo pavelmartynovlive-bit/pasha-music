@@ -1,0 +1,47 @@
+name: Bootstrap VPS deploy access
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure temporary root SSH access
+        env:
+          VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$VPS_DEPLOY_KEY" > ~/.ssh/pasha_music_bootstrap
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/pasha_music_bootstrap ~/.ssh/known_hosts
+
+      - name: Upload bootstrap scripts
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/pasha_music_bootstrap \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            backend/deploy/deploy-backend.sh \
+            backend/deploy/install-deploy-access.sh \
+            "root@$VPS_HOST:/tmp/"
+
+      - name: Install restricted deploy account
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/pasha_music_bootstrap \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            "root@$VPS_HOST" \
+            "chmod 755 /tmp/deploy-backend.sh /tmp/install-deploy-access.sh && DEPLOY_PUBLIC_KEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILXe4U69Ke8MaI28PPX/bwu3MqGYL+TIzE9rolWdSA6n github-actions-pasha-music' /tmp/install-deploy-access.sh && rm -f /tmp/deploy-backend.sh /tmp/install-deploy-access.sh && id pasha-deploy && systemctl is-active pasha-music && systemctl is-active antizapret"
