@@ -13,7 +13,7 @@
   <title>Pasha Music</title>
 </head>
 <body>
-  <main class="app-shell">
+  <main class="app-shell" id="mainScreen">
     <header class="topbar">
       <div><div class="eyebrow">Личная PWA</div><h1>Музыка</h1></div>
       <button class="icon-button" id="settingsButton" type="button" aria-label="Настройки подключения">⚙</button>
@@ -50,17 +50,62 @@
           <h2>Результаты</h2>
           <span id="searchResultCount"></span>
         </div>
-        <div class="search-result-list" id="searchResultList"></div>
+        <nav class="result-filters" id="resultFilters" aria-label="Тип результатов">
+          <button class="result-filter active" type="button" data-filter="all">Все</button>
+          <button class="result-filter" type="button" data-filter="tracks">Треки</button>
+          <button class="result-filter" type="button" data-filter="albums">Альбомы</button>
+        </nav>
+        <section class="result-group" id="searchTrackGroup">
+          <h3>Треки</h3>
+          <div class="search-result-list" id="searchResultList"></div>
+        </section>
+        <section class="result-group" id="searchAlbumGroup">
+          <h3>Альбомы</h3>
+          <div class="album-grid search-album-grid" id="searchAlbumList"></div>
+        </section>
       </section>
     </div>
 
     <div class="status" id="status" role="status">Подготовка…</div>
 
+    <section class="personal-library">
+      <div class="section-title"><h2>Моя музыка</h2><span id="personalLibraryCount"></span></div>
+      <nav class="library-switcher" id="librarySwitcher" aria-label="Моя музыка">
+        <button class="library-switch active" type="button" data-library-view="albums">Альбомы</button>
+        <button class="library-switch" type="button" data-library-view="playlists">Плейлисты</button>
+      </nav>
+      <div class="album-grid" id="libraryAlbumList"></div>
+      <div class="playlist-grid" id="libraryPlaylistList" hidden></div>
+    </section>
+
     <section class="library">
-      <div class="section-title"><h2 id="sectionTitle">Моя музыка</h2><span id="trackCount">0 треков</span></div>
+      <div class="section-title"><h2 id="sectionTitle">Треки</h2><span id="trackCount">0 треков</span></div>
       <nav class="section-tabs" id="sectionTabs" aria-label="Музыкальные разделы"></nav>
       <div class="track-list" id="trackList"></div>
     </section>
+  </main>
+
+  <main class="detail-screen" id="collectionScreen" hidden>
+    <header class="detail-topbar">
+      <button class="back-button" id="collectionBackButton" type="button" aria-label="Назад">‹</button>
+      <span id="collectionKind">Альбом</span>
+      <span class="detail-spacer"></span>
+    </header>
+    <div class="collection-hero">
+      <div class="collection-cover" id="collectionCover"></div>
+      <div class="collection-copy">
+        <div class="collection-kicker" id="collectionKicker"></div>
+        <h1 id="collectionTitle"></h1>
+        <button class="artist-link" id="collectionArtist" type="button"></button>
+        <p id="collectionMeta"></p>
+      </div>
+    </div>
+    <div class="collection-actions">
+      <button class="primary-action" id="collectionPlayButton" type="button">▶ Play</button>
+      <button class="secondary-action" id="collectionShuffleButton" type="button">Shuffle</button>
+      <button class="secondary-action" id="collectionMixButton" type="button">Создать микс</button>
+    </div>
+    <div class="track-list collection-track-list" id="collectionTrackList"></div>
   </main>
 
   <section class="mini-player" id="miniPlayer" aria-label="Сейчас играет" hidden>
@@ -91,6 +136,7 @@
         <div class="track-title" id="trackTitle">Pasha Music</div>
         <div class="track-artist" id="trackArtist">Выберите трек</div>
       </div>
+      <button class="player-mix-button" id="playerMixButton" type="button">Создать микс по треку</button>
       <input class="seek" id="seek" type="range" min="0" max="100" value="0" step="0.1" aria-label="Позиция воспроизведения" />
       <div class="time-row"><span id="currentTime">0:00</span><span id="duration">0:00</span></div>
       <div class="controls">
@@ -98,6 +144,15 @@
         <button class="play" id="playButton" type="button" aria-label="Воспроизвести">▶</button>
         <button class="control" id="nextButton" type="button" aria-label="Следующий трек">›</button>
       </div>
+    </div>
+  </section>
+
+  <section class="action-sheet" id="trackActionSheet" hidden aria-modal="true" role="dialog" aria-label="Действия с треком">
+    <button class="action-sheet-backdrop" id="actionSheetBackdrop" type="button" aria-label="Закрыть"></button>
+    <div class="action-sheet-panel">
+      <div class="action-sheet-track"><strong id="actionSheetTitle"></strong><small id="actionSheetArtist"></small></div>
+      <button id="actionSheetMixButton" type="button">Создать микс по треку</button>
+      <button id="actionSheetCloseButton" type="button">Отмена</button>
     </div>
   </section>
   <audio id="audio" preload="metadata" playsinline></audio>

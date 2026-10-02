@@ -194,6 +194,72 @@ function normalizeSection(raw) {
   };
 }
 
+function albumKey(album) {
+  return album ? `${album.ownerId}_${album.id}` : "";
+}
+
+function artistReference(track) {
+  const artist = track.artists?.find((item) => item?.name);
+  return {
+    id: artist?.id || null,
+    name: artist?.name || track.artist || "Неизвестный исполнитель",
+  };
+}
+
+function albumsFromTracks(tracks, limit = 12) {
+  const albums = new Map();
+
+  for (const track of tracks) {
+    if (!track.album?.id) continue;
+    const key = albumKey(track.album);
+    const existing = albums.get(key);
+    if (existing) {
+      if (!existing.tracks.some((item) => item.id === track.id && item.ownerId === track.ownerId)) {
+        existing.tracks.push(track);
+        existing.trackCount = existing.tracks.length;
+      }
+      continue;
+    }
+
+    albums.set(key, {
+      id: track.album.id,
+      ownerId: track.album.ownerId,
+      title: track.album.title,
+      artist: artistReference(track),
+      year: null,
+      artwork: track.album.thumbnail || track.thumbnail || {},
+      trackCount: 1,
+      tracks: [track],
+    });
+  }
+
+  return [...albums.values()].slice(0, limit);
+}
+
+async function findAlbumTracks(vk, { ownerId, albumId, title, artist }) {
+  const query = [artist, title].filter(Boolean).join(" ").trim() || title;
+  const collected = [];
+  const seen = new Set();
+
+  for (const offset of [0, 100, 200]) {
+    const result = await vk.searchAudio(query, offset);
+    for (const track of result.audios) {
+      if (
+        String(track.album?.id) !== String(albumId) ||
+        String(track.album?.ownerId) !== String(ownerId)
+      ) continue;
+      const key = `${track.ownerId}_${track.id}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        collected.push(track);
+      }
+    }
+    if (!result.audios.length || collected.length >= result.count) break;
+  }
+
+  return collected;
+}
+
 function sendVkError(res, error, operation) {
   const message = safeErrorMessage(error);
   console.error(`${operation} failed: ${message}`);
@@ -311,11 +377,39 @@ app.get("/api/search", async (req, res) => {
         query,
         count: result.count,
         tracks: result.audios,
+        albums: albumsFromTracks(result.audios),
         nextOffset: offset + result.audios.length,
       },
     });
   } catch (error) {
     sendVkError(res, error, "VK searchAudio");
+  }
+});
+
+app.get("/api/albums/:ownerId/:albumId", async (req, res) => {
+  const title = String(req.query.title || "").trim();
+  const artist = String(req.query.artist || "").trim();
+  if (!title) {
+    return res.status(400).json({ ok: false, error: "Для загрузки альбома нужно название" });
+  }
+
+  try {
+    const vk = makeVkAudio();
+    const tracks = await findAlbumTracks(vk, {
+      ownerId: req.params.ownerId,
+      albumId: req.params.albumId,
+      title,
+      artist,
+    });
+
+    const [album] = albumsFromTracks(tracks, 1);
+    if (!album) {
+      return res.status(404).json({ ok: false, error: "Не удалось загрузить треки этого альбома" });
+    }
+
+    res.json({ ok: true, result: { album: { ...album, trackCount: tracks.length, tracks } } });
+  } catch (error) {
+    sendVkError(res, error, "VK getAlbum");
   }
 });
 
