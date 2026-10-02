@@ -20,8 +20,8 @@ const elementIds = [
   "coverFallback", "coverImage", "currentTime", "duration", "fullPlayer", "libraryAlbumList", "libraryPlaylistList",
   "homeTabs", "libraryHomeView", "librarySwitcher", "mainScreen", "miniCoverFallback", "miniCoverImage", "miniNextButton", "miniPlayButton", "miniPlayer",
   "miniProgress", "miniTrackArtist", "miniTrackTitle", "nextButton", "openPlayerButton", "personalLibraryCount", "playButton",
-  "playerMixButton", "previousButton", "resultFilters", "searchAlbumGroup", "searchAlbumList", "searchForm", "searchInput",
-  "searchResultCount", "searchResultList", "searchResults", "searchSuggestions", "searchTrackGroup", "sectionTabs", "sectionTitle",
+  "playerMixButton", "previousButton", "searchAlbumGroup", "searchAlbumList", "searchForm", "searchInput",
+  "searchResultList", "searchResults", "searchSuggestions", "searchTrackGroup", "sectionTabs", "sectionTitle",
   "searchHomeView", "seek", "settingsButton", "setupForm", "setupPanel", "status", "trackActionSheet", "trackArtist", "trackCount", "trackLabel",
   "trackList", "trackTitle",
 ];
@@ -43,7 +43,7 @@ const state = {
   config: readJson(CONNECTION_STORAGE_KEY, {}),
   library: normalizeStoredLibrary(readJson(LIBRARY_STORAGE_KEY, {})),
   sections: [], currentSectionId: null, libraryTracks: [], libraryView: "albums",
-  searchTracks: [], searchAlbums: [], searchTotal: 0, searchQuery: "", searchActive: false, searchFilter: "all",
+  searchTracks: [], searchAlbums: [], searchTotal: 0, searchQuery: "", searchActive: false,
   playbackQueue: [], currentTrackKey: null, currentTrack: null,
   currentView: "home", homeTab: "search", currentCollection: null, actionTrack: null,
   suggestionTimer: null, suggestionRequestId: 0,
@@ -265,28 +265,19 @@ function renderPersonalLibrary() {
     if (!state.library.playlists.length) elements.libraryPlaylistList.append(Object.assign(document.createElement("div"), { className: "empty library-empty", textContent: "Создайте первый микс из меню трека." }));
   }
 }
-function setSearchFilter(filter) {
-  state.searchFilter = filter;
-  elements.resultFilters.querySelectorAll("[data-filter]").forEach((button) => button.classList.toggle("active", button.dataset.filter === filter));
-  renderSearchResults();
-}
 function renderSearchResults() {
   elements.searchResults.hidden = !state.searchActive;
   if (!state.searchActive) {
-    elements.searchResultList.replaceChildren(); elements.searchAlbumList.replaceChildren(); elements.searchResultCount.textContent = ""; return;
+    elements.searchResultList.replaceChildren(); elements.searchAlbumList.replaceChildren(); return;
   }
-  const showTracks = state.searchFilter !== "albums"; const showAlbums = state.searchFilter !== "tracks";
   const visibleTracks = state.searchTracks.slice(0, SEARCH_RESULT_LIMIT);
-  elements.searchTrackGroup.hidden = !showTracks || !visibleTracks.length; elements.searchAlbumGroup.hidden = !showAlbums || !state.searchAlbums.length;
-  elements.searchResultCount.textContent = `${state.searchTotal} треков · ${state.searchAlbums.length} альбомов`;
+  elements.searchTrackGroup.hidden = !visibleTracks.length; elements.searchAlbumGroup.hidden = !state.searchAlbums.length;
   elements.searchResultList.replaceChildren(...visibleTracks.map((track) => createTrackRow(track, state.searchTracks.slice(0, SEARCH_RESULT_LIMIT))));
   elements.searchAlbumList.replaceChildren(...state.searchAlbums.map(createAlbumCard));
-  if ((!showTracks || !visibleTracks.length) && (!showAlbums || !state.searchAlbums.length)) {
+  if (!visibleTracks.length && !state.searchAlbums.length) {
     const empty = Object.assign(document.createElement("div"), { className: "search-empty", textContent: "Ничего не найдено" });
-    const target = state.searchFilter === "albums" ? elements.searchAlbumGroup : elements.searchTrackGroup;
-    target.hidden = false;
-    if (target === elements.searchAlbumGroup) elements.searchAlbumList.replaceChildren(empty);
-    else elements.searchResultList.replaceChildren(empty);
+    elements.searchTrackGroup.hidden = false;
+    elements.searchResultList.replaceChildren(empty);
   }
 }
 function renderSuggestions(suggestions) {
@@ -456,11 +447,10 @@ elements.setupForm.addEventListener("submit", async (event) => {
 });
 elements.settingsButton.addEventListener("click", () => showSetup(true));
 elements.closeSetupButton.addEventListener("click", () => showSetup(false));
-elements.homeTabs.addEventListener("click", (event) => { if (event.target.dataset.homeTab) setHomeTab(event.target.dataset.homeTab); });
+elements.homeTabs.addEventListener("click", (event) => { const button = event.target.closest("[data-home-tab]"); if (button) setHomeTab(button.dataset.homeTab); });
 elements.searchForm.addEventListener("submit", (event) => { event.preventDefault(); searchMusic(elements.searchInput.value); elements.searchInput.blur(); });
 elements.searchInput.addEventListener("input", scheduleSuggestions); elements.searchInput.addEventListener("focus", scheduleSuggestions);
 elements.clearSearchButton.addEventListener("click", () => clearSearch(true));
-elements.resultFilters.addEventListener("click", (event) => { if (event.target.dataset.filter) setSearchFilter(event.target.dataset.filter); });
 elements.librarySwitcher.addEventListener("click", (event) => { if (event.target.dataset.libraryView) { state.libraryView = event.target.dataset.libraryView; renderPersonalLibrary(); } });
 elements.collectionBackButton.addEventListener("click", () => showView("home"));
 elements.collectionPlayButton.addEventListener("click", () => { const tracks = state.currentCollection?.tracks || []; if (tracks.length) playTrack(tracks[0], tracks); });
@@ -479,7 +469,9 @@ elements.playButton.addEventListener("click", () => {
 elements.miniPlayButton.addEventListener("click", () => { if (elements.audio.paused) elements.audio.play(); else elements.audio.pause(); });
 elements.previousButton.addEventListener("click", () => moveTrack(-1)); elements.nextButton.addEventListener("click", () => moveTrack(1)); elements.miniNextButton.addEventListener("click", () => moveTrack(1));
 elements.seek.addEventListener("input", () => { if (Number.isFinite(elements.audio.duration)) elements.audio.currentTime = (Number(elements.seek.value) / 100) * elements.audio.duration; });
-elements.audio.addEventListener("play", () => setPlaybackButtonState(true)); elements.audio.addEventListener("pause", () => setPlaybackButtonState(false));
+elements.audio.addEventListener("play", () => setPlaybackButtonState(true));
+elements.audio.addEventListener("playing", () => setPlaybackButtonState(true));
+elements.audio.addEventListener("pause", () => setPlaybackButtonState(false));
 elements.audio.addEventListener("timeupdate", () => {
   const { currentTime, duration } = elements.audio; elements.currentTime.textContent = formatTime(currentTime); elements.duration.textContent = formatTime(duration);
   const progress = Number.isFinite(duration) && duration > 0 ? (currentTime / duration) * 100 : 0;

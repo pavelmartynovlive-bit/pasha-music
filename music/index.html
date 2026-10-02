@@ -15,7 +15,14 @@
 <body>
   <main class="app-shell" id="mainScreen">
     <header class="home-header">
-      <div><div class="eyebrow">Личная PWA</div><h1>Музыка</h1></div>
+      <nav class="compact-tabs" id="homeTabs" aria-label="Главные разделы">
+        <button class="compact-tab active" type="button" data-home-tab="search" aria-label="Поиск" aria-selected="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+        </button>
+        <button class="compact-tab" type="button" data-home-tab="library" aria-label="Моя музыка" aria-selected="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14"/><circle cx="3" cy="6" r=".8"/><circle cx="3" cy="12" r=".8"/><circle cx="3" cy="18" r=".8"/></svg>
+        </button>
+      </nav>
       <button class="icon-button" id="settingsButton" type="button" aria-label="Настройки подключения">⚙</button>
     </header>
 
@@ -87,15 +94,6 @@
         <div class="search-suggestions" id="searchSuggestions" aria-label="Поисковые подсказки" hidden></div>
 
         <section class="search-results" id="searchResults" aria-live="polite" hidden>
-          <div class="search-results-heading">
-            <h2>Результаты</h2>
-            <span id="searchResultCount"></span>
-          </div>
-          <nav class="result-filters" id="resultFilters" aria-label="Тип результатов">
-            <button class="result-filter active" type="button" data-filter="all">Все</button>
-            <button class="result-filter" type="button" data-filter="tracks">Треки</button>
-            <button class="result-filter" type="button" data-filter="albums">Альбомы</button>
-          </nav>
           <section class="result-group" id="searchTrackGroup">
             <h3>Треки</h3>
             <div class="search-result-list" id="searchResultList"></div>
@@ -151,17 +149,6 @@
     </div>
     <div class="track-list collection-track-list" id="collectionTrackList"></div>
   </main>
-
-  <nav class="bottom-nav" id="homeTabs" aria-label="Главные разделы">
-    <button class="bottom-nav-item active" type="button" data-home-tab="search" aria-selected="true">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
-      <span>Поиск</span>
-    </button>
-    <button class="bottom-nav-item" type="button" data-home-tab="library" aria-selected="false">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14"/><circle cx="3" cy="6" r=".8"/><circle cx="3" cy="12" r=".8"/><circle cx="3" cy="18" r=".8"/></svg>
-      <span>Моя музыка</span>
-    </button>
-  </nav>
 
   <section class="mini-player" id="miniPlayer" aria-label="Сейчас играет" hidden>
     <button class="mini-player-open" id="openPlayerButton" type="button" aria-label="Открыть полноэкранный плеер">
