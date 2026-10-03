@@ -136,23 +136,62 @@ function requireVkCookies() {
   }
 }
 
-function makeVkAudio() {
+function makeVkWebClient() {
   requireVkCookies();
 
-  const webClient = new VKWebClient({
+  return new VKWebClient({
     cookies: {
       p: COOKIE_P,
       remixsid: COOKIE_REMIXSID,
     },
   });
+}
+
+let vkAudio;
+let vkAudioPromise;
+
+async function createAuthenticatedVkAudio() {
+  const webClient = makeVkWebClient();
+  const refreshedToken = await webClient.refresh();
+
+  if (!refreshedToken.success) {
+    throw refreshedToken.error;
+  }
+
+  const { accessToken, expiresIn } = refreshedToken.data;
 
   return new VKAudio({
     client: webClient,
     token: {
-      value: "",
-      expiresIn: -1,
+      value: accessToken,
+      expiresIn,
     },
   });
+}
+
+function resetVkAudio(client) {
+  if (!client || vkAudio === client) {
+    vkAudio = undefined;
+  }
+}
+
+function getVkAudio() {
+  if (vkAudio) {
+    return Promise.resolve(vkAudio);
+  }
+
+  if (!vkAudioPromise) {
+    vkAudioPromise = createAuthenticatedVkAudio()
+      .then((client) => {
+        vkAudio = client;
+        return client;
+      })
+      .finally(() => {
+        vkAudioPromise = undefined;
+      });
+  }
+
+  return vkAudioPromise;
 }
 
 function safeErrorMessage(error) {
@@ -168,6 +207,33 @@ function safeErrorMessage(error) {
       secret ? safeMessage.replaceAll(secret, "[redacted]") : safeMessage,
     message
   );
+}
+
+function isVkAuthorizationError(error) {
+  const message = safeErrorMessage(error).toLowerCase();
+  return [
+    "authorization failed",
+    "client_secret",
+    "access token",
+    "failed to refresh vkwebclient token",
+    "invalid session",
+  ].some((fragment) => message.includes(fragment));
+}
+
+async function withVkAudio(operation) {
+  let client;
+
+  try {
+    client = await getVkAudio();
+    return await operation(client);
+  } catch (error) {
+    if (!isVkAuthorizationError(error)) {
+      throw error;
+    }
+
+    resetVkAudio(client);
+    return operation(await getVkAudio());
+  }
 }
 
 function normalizeSection(raw) {
@@ -282,6 +348,15 @@ function sendVkError(res, error, operation) {
   const message = safeErrorMessage(error);
   console.error(`${operation} failed: ${message}`);
 
+  if (isVkAuthorizationError(error)) {
+    return res.status(502).json({
+      ok: false,
+      error: "Не удалось обновить сессию VK. Повторите запрос через несколько секунд.",
+      hint:
+        "Если ошибка повторяется постоянно, нужно обновить cookies VK на сервере.",
+    });
+  }
+
   res.status(error?.statusCode || 500).json({
     ok: false,
     error: message,
@@ -311,8 +386,7 @@ app.get("/api/health", (_req, res) => {
 
 app.get("/api/sections", async (_req, res) => {
   try {
-    const vk = makeVkAudio();
-    const result = await vk.getSections();
+    const result = await withVkAudio((vk) => vk.getSections());
 
     res.json({
       ok: true,
@@ -325,8 +399,9 @@ app.get("/api/sections", async (_req, res) => {
 
 app.get("/api/sections/:sectionId", async (req, res) => {
   try {
-    const vk = makeVkAudio();
-    const raw = await vk.rawGetSection(req.params.sectionId);
+    const raw = await withVkAudio((vk) =>
+      vk.rawGetSection(req.params.sectionId)
+    );
 
     res.json({
       ok: true,
@@ -352,8 +427,9 @@ app.get("/api/search/suggestions", async (req, res) => {
   }
 
   try {
-    const vk = makeVkAudio();
-    const suggestions = await vk.getSearchSuggestion(query);
+    const suggestions = await withVkAudio((vk) =>
+      vk.getSearchSuggestion(query)
+    );
 
     res.json({
       ok: true,
@@ -386,8 +462,7 @@ app.get("/api/search", async (req, res) => {
   }
 
   try {
-    const vk = makeVkAudio();
-    const result = await vk.searchAudio(query, offset);
+    const result = await withVkAudio((vk) => vk.searchAudio(query, offset));
 
     res.json({
       ok: true,
@@ -420,12 +495,13 @@ app.get("/api/tracks/:ownerId/:audioId/recommendations", async (req, res) => {
     : 30;
 
   try {
-    const vk = makeVkAudio();
-    const recommendations = await getTrackRecommendations(vk, {
-      ownerId,
-      audioId,
-      count: limit,
-    });
+    const recommendations = await withVkAudio((vk) =>
+      getTrackRecommendations(vk, {
+        ownerId,
+        audioId,
+        count: limit,
+      })
+    );
     const uniqueTracks = [
       ...new Map(
         recommendations
@@ -459,13 +535,14 @@ app.get("/api/albums/:ownerId/:albumId", async (req, res) => {
   }
 
   try {
-    const vk = makeVkAudio();
-    const tracks = await findAlbumTracks(vk, {
-      ownerId: req.params.ownerId,
-      albumId: req.params.albumId,
-      title,
-      artist,
-    });
+    const tracks = await withVkAudio((vk) =>
+      findAlbumTracks(vk, {
+        ownerId: req.params.ownerId,
+        albumId: req.params.albumId,
+        title,
+        artist,
+      })
+    );
 
     const [album] = albumsFromTracks(tracks, 1);
     if (!album) {
@@ -480,9 +557,10 @@ app.get("/api/albums/:ownerId/:albumId", async (req, res) => {
 
 app.get("/api/first-track", async (_req, res) => {
   try {
-    const vk = makeVkAudio();
-    const { defaultSection } = await vk.getSections();
-    const raw = await vk.rawGetSection(defaultSection);
+    const raw = await withVkAudio(async (vk) => {
+      const { defaultSection } = await vk.getSections();
+      return vk.rawGetSection(defaultSection);
+    });
     const section = normalizeSection(raw);
     const track = section.tracks.find((item) => item.fileUrl);
 
