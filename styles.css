@@ -40,7 +40,7 @@ h2 { font-size: 22px; letter-spacing: -.025em; }
 .primary-button { border: 0; border-radius: 12px; padding: 14px; background: #f5f5f7; color: #0b0b0c; font-weight: 700; }
 .setup-note { margin-top: 12px; color: #8e8e93; font-size: 12px; line-height: 1.45; }
 .search-home-view { padding-top: 4px; }
-.mascot-hero { position: relative; height: calc(min(100vw, 620px) - 64px); display: grid; place-items: center; overflow: visible; pointer-events: none; }
+.mascot-hero { position: relative; height: 224px; display: grid; place-items: center; overflow: visible; pointer-events: none; }
 .cat-mascot { position: absolute; bottom: -64px; width: calc(100% + 40px); aspect-ratio: 1; display: grid; place-items: center; overflow: hidden; }
 .cat-mascot-image, .cat-mascot-video, .cat-mascot-svg { width: 100%; height: 100%; grid-area: 1 / 1; transition: opacity .18s ease; }
 .cat-mascot-image, .cat-mascot-video { object-fit: cover; object-position: center center; transform: scale(1.06); transform-origin: center bottom; }

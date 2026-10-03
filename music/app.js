@@ -181,7 +181,17 @@ function setHomeTab(tab) {
   elements.collectionScreen.scrollTo({ top: 0, behavior: "auto" });
   elements.artistScreen.scrollTo({ top: 0, behavior: "auto" });
 }
-function showView(view, collection = null) {
+const navigationStack = [];
+function showView(view, collection = null, remember = true) {
+  if (remember && view !== "home") {
+    navigationStack.push({
+      view: state.currentView, collection: state.currentCollection,
+      artist: state.currentArtist, homeTab: state.homeTab,
+      playerOpen: !elements.fullPlayer.hidden,
+      scroll: [elements.mainScreen.scrollTop, elements.collectionScreen.scrollTop, elements.artistScreen.scrollTop],
+    });
+  }
+  showPlayer(false);
   state.currentView = view;
   state.currentCollection = collection;
   elements.mainScreen.hidden = view !== "home";
@@ -194,6 +204,23 @@ function showView(view, collection = null) {
   elements.mainScreen.scrollTo({ top: 0, behavior: "auto" });
   elements.collectionScreen.scrollTo({ top: 0, behavior: "auto" });
   elements.artistScreen.scrollTo({ top: 0, behavior: "auto" });
+}
+async function goBack() {
+  const previous = navigationStack.pop();
+  if (!previous) { showView("home", null, false); return; }
+  setHomeTab(previous.homeTab);
+  if (previous.view === "artist") await openArtist(previous.artist, false);
+  else if (previous.view === "album" && !previous.collection?.tracks?.length) await openAlbum(previous.collection, false);
+  else {
+    showView(previous.view, previous.collection, false);
+    if (previous.collection) renderCollection();
+  }
+  showPlayer(previous.playerOpen);
+  requestAnimationFrame(() => {
+    [elements.mainScreen, elements.collectionScreen, elements.artistScreen].forEach((screen, index) => {
+      screen.scrollTop = previous.scroll[index];
+    });
+  });
 }
 function setPlaybackButtonState(isPlaying) {
   const label = isPlaying ? "Пауза" : "Воспроизвести";
@@ -408,8 +435,8 @@ function renderCollection() {
   elements.collectionTrackList.replaceChildren(...tracks.map((track, index) => createTrackRow(track, tracks, { index: index + 1 })));
   if (!tracks.length) elements.collectionTrackList.append(Object.assign(document.createElement("div"), { className: "empty", textContent: "Загружаю треки…" }));
 }
-async function openAlbum(album) {
-  showView("album", { ...album, tracks: [] }); renderCollection();
+async function openAlbum(album, remember = true) {
+  showView("album", { ...album, tracks: [] }, remember); renderCollection();
   elements.collectionTrackList.replaceChildren(Object.assign(document.createElement("div"), { className: "empty", textContent: "Загрузка трек-листа…" }));
   try {
     const path = `/api/albums/${encodeURIComponent(album.ownerId)}/${encodeURIComponent(album.id)}?title=${encodeURIComponent(album.title)}&artist=${encodeURIComponent(album.artist?.name || "")}`;
@@ -425,10 +452,10 @@ async function openAlbum(album) {
   }
 }
 let artistRequestId = 0;
-async function openArtist(artist) {
+async function openArtist(artist, remember = true) {
   if (!artist?.name) return;
-  showPlayer(false);
-  showView("artist");
+  showView("artist", null, remember);
+  state.currentArtist = artist;
   const requestId = ++artistRequestId;
   elements.artistTitle.textContent = artist.name;
   elements.artistStatus.textContent = "Загрузка…";
@@ -601,7 +628,7 @@ elements.searchInput.addEventListener("input", scheduleSuggestions);
 elements.searchInput.addEventListener("focus", scheduleSuggestions);
 elements.clearSearchButton.addEventListener("click", () => clearSearch(true));
 elements.librarySwitcher.addEventListener("click", (event) => { if (event.target.dataset.libraryView) { state.libraryView = event.target.dataset.libraryView; renderPersonalLibrary(); } });
-elements.collectionBackButton.addEventListener("click", () => showView("home"));
+elements.collectionBackButton.addEventListener("click", () => { void goBack(); });
 elements.collectionPlayButton.addEventListener("click", () => { const tracks = state.currentCollection?.tracks || []; if (tracks.length) playTrack(tracks[0], tracks); });
 elements.collectionShuffleButton.addEventListener("click", () => { const tracks = shuffled(state.currentCollection?.tracks || []); if (tracks.length) playTrack(tracks[0], tracks); });
 elements.collectionMixButton.addEventListener("click", () => { if (state.currentView === "album") createAndOpenMix({ kind: "album", album: state.currentCollection }); });
@@ -609,10 +636,10 @@ elements.openPlayerButton.addEventListener("click", () => showPlayer(true)); ele
 elements.trackArtist.addEventListener("click", () => { if (state.currentTrack) void openArtist(artistForTrack(state.currentTrack)); });
 elements.trackAlbum.addEventListener("click", () => {
   const album = albumFromTrack(state.currentTrack);
-  if (album) { showPlayer(false); void openAlbum(album); }
+  if (album) { void openAlbum(album); }
 });
 elements.collectionArtist.addEventListener("click", () => { if (state.currentCollection?.artist) void openArtist(state.currentCollection.artist); });
-elements.artistBackButton.addEventListener("click", () => showView("home"));
+elements.artistBackButton.addEventListener("click", () => { void goBack(); });
 elements.playerMixButton.addEventListener("click", () => { if (state.currentTrack) createAndOpenMix({ kind: "track", track: state.currentTrack }); });
 elements.miniMixButton.addEventListener("click", () => { if (state.currentTrack) createAndOpenMix({ kind: "track", track: state.currentTrack }); });
 elements.actionSheetMixButton.addEventListener("click", () => { if (state.actionTrack) createAndOpenMix({ kind: "track", track: state.actionTrack }); });
@@ -641,7 +668,7 @@ elements.audio.addEventListener("ended", () => moveTrack(1));
 elements.audio.addEventListener("error", () => { setPlaybackButtonState(false); setStatus("Не удалось открыть аудио. Обновите раздел и попробуйте снова.", true); });
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
-  if (!elements.trackActionSheet.hidden) closeTrackActions(); else if (!elements.fullPlayer.hidden) showPlayer(false); else if (state.currentView !== "home") showView("home");
+  if (!elements.trackActionSheet.hidden) closeTrackActions(); else if (!elements.fullPlayer.hidden) showPlayer(false); else if (state.currentView !== "home") void goBack();
 });
 if ("mediaSession" in navigator) {
   navigator.mediaSession.setActionHandler("play", () => { void resumePlayback(); }); navigator.mediaSession.setActionHandler("pause", pausePlayback);
