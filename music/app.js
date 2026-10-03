@@ -88,22 +88,8 @@ function setStatus(message, isError = false) {
 }
 function saveLibrary() { localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(state.library)); }
 function showSetup(show = true) { elements.setupPanel.hidden = !show; if (show) elements.backendUrlInput.focus(); }
-// Use one viewport coordinate system for the shell and its navigation row.
-// Never scroll the document in response to a viewport event: iOS generates
-// more viewport events from those scrolls, causing a visible correction loop.
-function syncAppViewport() {
-  const viewport = window.visualViewport;
-  if (viewport && viewport.scale !== 1) return;
-  document.body.style.top = `${viewport?.offsetTop || 0}px`;
-  document.body.style.height = `${viewport?.height || window.innerHeight}px`;
-}
-window.visualViewport?.addEventListener("resize", syncAppViewport);
-window.visualViewport?.addEventListener("scroll", syncAppViewport);
-window.addEventListener("resize", syncAppViewport);
-window.addEventListener("pageshow", syncAppViewport);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) syncAppViewport(); });
-syncAppViewport();
-
+// The keyboard overlays the app. Keep the shell in the layout viewport:
+// visualViewport shrinks when the keyboard opens and would lift navigation.
 function focusSearchInput() {
   if (state.currentView !== "home" || state.homeTab !== "search" || !elements.setupPanel.hidden) return;
   if (document.activeElement === elements.searchInput) return;
