@@ -8,7 +8,7 @@ BASE = os.getenv('PASHAMUSIC_TEST_URL', 'http://127.0.0.1:8911/music/')
 FIXTURE_ORIGIN = '{0.scheme}://{0.netloc}'.format(urlsplit(BASE))
 CHROMIUM_EXECUTABLE = os.getenv('PASHAMUSIC_CHROMIUM_EXECUTABLE') or shutil.which('chromium') or shutil.which('chromium-browser')
 REPORT = Path(os.getenv('PASHAMUSIC_TEST_REPORT', '/tmp/pasha-audio-recovery-results.json'))
-UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1'
+UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1'
 TRACKS = [{'ownerId': 1, 'id': i + 1, 'title': f'Track {n}', 'artist': f'Artist {n}', 'duration': 180, 'fileUrl': f'{FIXTURE_ORIGIN}/test-{n}.wav'} for i, n in enumerate(['A', 'B'])]
 
 SESSION = r'''(() => {
@@ -54,14 +54,14 @@ STRICT_MEDIA = r'''(() => {
   for(const name of ['src','currentSrc','paused','ended','currentTime','duration','readyState','networkState']){
     const old=Object.getOwnPropertyDescriptor(proto,name);
     const get=function(){if(this.tagName!=='AUDIO')return old.get.call(this);const v=m(this);return ({src:v.source,currentSrc:v.source,paused:v.paused,ended:v.ended,currentTime:v.position,duration:v.duration,readyState:v.ready,networkState:v.ready?1:2})[name]};
-    const set=name==='src'?function(value){if(this.tagName!=='AUDIO')return old.set.call(this,value);sourceLoad(this,String(value))}:name==='currentTime'?function(value){if(this.tagName!=='AUDIO')return old.set.call(this,value);const v=m(this);if(!v.ready)throw new DOMException('No metadata','InvalidStateError');v.position=Number(value);setTimeout(()=>{event(this,'seeking');event(this,'seeked');event(this,'timeupdate')},0)}:old.set;
+    const set=name==='src'?function(value){if(this.tagName!=='AUDIO')return old.set.call(this,value);sourceLoad(this,String(value))}:name==='currentTime'?function(value){if(this.tagName!=='AUDIO')return old.set.call(this,value);const v=m(this);if(!v.ready)throw new DOMException('No metadata','InvalidStateError');v.position=Number(value);v.ended=Number.isFinite(v.duration)&&v.position>=v.duration;setTimeout(()=>{event(this,'seeking');event(this,'seeked');event(this,'timeupdate')},0)}:old.set;
     Object.defineProperty(proto,name,{configurable:true,get,set});
   }
   const nativePlay=proto.play,nativePause=proto.pause,nativeLoad=proto.load;
-  proto.play=function(){if(this.tagName!=='AUDIO')return nativePlay.call(this);const v=m(this);v.plays++;const mode=window.__media.next||v.next;window.__media.next=null;v.next=mode==='frozen'?'frozen':'ok';v.blocked=mode==='hold'||mode==='frozen';if(mode==='deny')return Promise.reject(new DOMException('Autoplay blocked','NotAllowedError'));if(mode==='expire')return Promise.reject(new DOMException('Bad URL','NotSupportedError'));v.paused=false;setTimeout(()=>event(this,'play'),0);if(mode==='promise-only')return Promise.resolve();return new Promise((resolve,reject)=>{v.pending.push({resolve,reject});if(mode!=='hold'&&mode!=='frozen')finish(this)})};
+  proto.play=function(){if(this.tagName!=='AUDIO')return nativePlay.call(this);const v=m(this);v.plays++;const mode=window.__media.next||v.next;window.__media.next=null;v.next=mode==='frozen'?'frozen':'ok';v.blocked=mode==='hold'||mode==='frozen';if(mode==='deny')return Promise.reject(new DOMException('Autoplay blocked','NotAllowedError'));if(mode==='expire')return Promise.reject(new DOMException('Bad URL','NotSupportedError'));v.paused=false;setTimeout(()=>event(this,'play'),0);if(mode==='promise-only'){finish(this);return Promise.resolve()}return new Promise((resolve,reject)=>{v.pending.push({resolve,reject});if(mode!=='hold'&&mode!=='frozen')finish(this)})};
   proto.pause=function(){if(this.tagName!=='AUDIO')return nativePause.call(this);const v=m(this);if(v.paused)return;v.paused=true;v.audible=false;v.pending.splice(0).forEach(p=>p.reject(new DOMException('Paused pending play','AbortError')));setTimeout(()=>event(this,'pause'),0)};
   proto.load=function(){if(this.tagName!=='AUDIO')return nativeLoad.call(this);const v=m(this);v.loads++;sourceLoad(this,v.source)};
-  window.__media={model:m,event,next:null,options:{},advance(a,position){const v=m(a);v.position=position;event(a,'timeupdate')},externalPause(a){a.pause()},freeze(a){const v=m(a);v.audible=false;v.next='frozen'},forcePaused(a){m(a).paused=false},snapshot(a){const v=m(a);return {id:v.id,source:v.source,paused:v.paused,position:v.position,ready:v.ready,plays:v.plays,loads:v.loads,audible:v.audible,events:v.events.slice(-12)}}};
+  window.__media={model:m,event,next:null,options:{},advance(a,position){const v=m(a);v.position=position;event(a,'timeupdate')},metadataReady(a){const v=m(a);v.ready=1;v.duration=180;event(a,'loadedmetadata');v.ready=4;event(a,'canplay');finish(a)},externalPause(a){a.pause()},freeze(a){const v=m(a);v.audible=false;v.next='frozen'},forcePaused(a){m(a).paused=false},snapshot(a){const v=m(a);return {id:v.id,source:v.source,paused:v.paused,position:v.position,ready:v.ready,plays:v.plays,loads:v.loads,audible:v.audible,events:v.events.slice(-12)}}};
 })();'''
 
 COMMON = r'''window.__test.assert=(condition,message)=>{if(!condition)throw Error(message)};
@@ -72,6 +72,117 @@ window.__test.model=()=>__media.model(__test.audio());
 window.__test.start=async(tracks)=>{await __test.playTrack(tracks[0],tracks);await __test.until(()=>__test.model().audible,'initial playing event');__media.advance(__test.audio(),43);await __test.wait()};'''
 
 SCENARIOS = {
+ 'native_resume_without_session_state_keeps_decoder': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);
+   const audio=t.audio(),loads=t.model().loads,epoch=t.model().epoch;
+   __media.externalPause(audio);await t.wait(60);__session.dispatchEvent(new Event('statechange'));
+   await audio.play();await t.until(()=>t.model().audible,'native playback resumes after external voice capture');__session.dispatchEvent(new Event('statechange'));await t.wait(60);
+   t.assert(t.audio()===audio&&t.model().loads===loads&&t.model().epoch===epoch,'native playing with unsupported AudioSession.state must preserve source and decoder');
+   t.assert(document.getElementById('playButton').getAttribute('aria-label')==='Пауза'&&navigator.mediaSession.playbackState==='playing','native resume must restore player and Control Center state');
+   t.assert(Math.abs(t.model().position-43)<.6,'native resume retains the microphone interruption position');
+ }''',
+ 'system_pause_then_native_pause_without_session_state': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);const audio=t.audio(),loads=t.model().loads,epoch=t.model().epoch;
+   __command('pause',{},false);
+   t.assert(navigator.mediaSession.playbackState==='paused','capture Pause must immediately exposePlay in Control Center');
+   __media.externalPause(audio);await t.wait(400);
+   t.assert(t.model().paused&&!t.model().audible,'capture keeps audio paused beyond the manual Pause grace period');
+   await audio.play();await t.until(()=>t.model().audible,'native resume retains intent after system Pause precedes native audio Pause');await t.wait(40);
+   t.assert(t.model().loads===loads&&t.model().epoch===epoch&&Math.abs(t.model().position-43)<.6,'missing-state capture resume preserves the original decoder and checkpoint');
+   t.assert(document.getElementById('playButton').getAttribute('aria-label')==='Пауза','native resume must restore visible playing state');
+ }''',
+ 'native_pause_then_system_pause_without_session_state': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);const audio=t.audio(),loads=t.model().loads,epoch=t.model().epoch;
+   __media.externalPause(audio);await t.wait(35);__command('pause',{},false);
+   t.assert(navigator.mediaSession.playbackState==='paused','capture Pause after native pause must immediately exposePlay in Control Center');
+   await t.wait(400);t.assert(t.model().paused&&!t.model().audible,'capture must remain paused without erasing auto-resume intent');
+   await audio.play();await t.until(()=>t.model().audible,'native resume retains intent when native Pause precedes system Pause');await t.wait(40);
+   t.assert(t.model().loads===loads&&t.model().epoch===epoch&&Math.abs(t.model().position-43)<.6,'late system Pause must not erase the captured checkpoint');
+   t.assert(document.getElementById('playButton').getAttribute('aria-label')==='Пауза','native resume must restore visible playing state');
+ }''',
+ 'manual_system_pause_without_session_state_stays_paused': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);__command('pause',{},true);
+   t.assert(navigator.mediaSession.playbackState==='paused','manual Pause without session state publishes paused synchronously');await t.wait(400);
+   const plays=t.model().plays;__session.dispatchEvent(new Event('statechange'));window.dispatchEvent(new Event('focus'));document.dispatchEvent(new Event('visibilitychange'));await t.wait(200);
+   t.assert(t.model().paused&&!t.model().audible&&t.model().plays===plays,'ordinary manual Pause without a native capture pause must suppress auto-resume');
+ }''',
+ 'short_native_capture_resume_cancels_pause_grace': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);const audio=t.audio(),loads=t.model().loads,epoch=t.model().epoch;
+   __command('pause',{},false);__media.externalPause(audio);await t.wait(35);
+   await audio.play();await t.until(()=>t.model().audible,'short microphone capture resumes natively before Pause grace expires');await t.wait(320);
+   t.assert(t.model().audible&&!t.model().paused&&navigator.mediaSession.playbackState==='playing','expired Pause grace must not stop accepted short native resume');
+   t.assert(t.model().loads===loads&&t.model().epoch===epoch&&t.audio()===audio,'short capture must retain the native decoder');
+ }''',
+ 'long_opaque_capture_probe_does_not_reset_decoder': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);const audio=t.audio(),loads=t.model().loads,epoch=t.model().epoch;
+   __hidden=true;document.dispatchEvent(new Event('visibilitychange'));__media.externalPause(audio);await t.wait(45);
+   __media.next='hold';__session.dispatchEvent(new Event('statechange'));await t.wait(40);__media.advance(audio,95);
+   await t.until(()=>JSON.parse(getMusicPlaybackDiagnostics()).events.some(event=>event.event==='resume-held-for-capture'),'opaque automatic probe reaches its bounded capture hold',1200);
+   const last=JSON.parse(getMusicPlaybackDiagnostics()).events.at(-1);
+   t.assert(!t.model().audible&&t.audio()===audio&&t.model().loads===loads&&t.model().epoch===epoch,'a long pending play without session state must not reset or replace the native player');
+   t.assert(last.wanted&&Math.abs(last.checkpoint-43)<.6&&document.getElementById('currentTime').textContent==='0:43','opaque timeout must preserve auto-resume intent and frozen checkpoint');
+   t.assert(navigator.mediaSession.playbackState==='playing','a delayed opaque timeout must preserve native MediaSession auto-resume state');
+   __command('play',{},true);await t.until(()=>t.model().audible,'Control Center Play recovers after long opaque capture');
+   t.assert(t.model().loads===loads&&t.model().epoch===epoch&&Math.abs(t.model().position-43)<.6,'post-capture Play restores the checkpoint without replacing the decoder');
+ }''',
+ 'opaque_automatic_denial_preserves_native_resume_state': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);const audio=t.audio(),loads=t.model().loads,epoch=t.model().epoch;
+   __hidden=true;document.dispatchEvent(new Event('visibilitychange'));__media.externalPause(audio);await t.wait(45);
+   __media.next='deny';__session.dispatchEvent(new Event('statechange'));
+   await t.until(()=>JSON.parse(getMusicPlaybackDiagnostics()).events.some(event=>event.event==='resume-held-for-capture'),'opaque automatic denial preserves its native interruption',600);
+   const last=JSON.parse(getMusicPlaybackDiagnostics()).events.at(-1);
+   t.assert(navigator.mediaSession.playbackState==='playing'&&last.wanted&&Math.abs(last.checkpoint-43)<.6,'automatic opaque denial must not overwrite native Playing or erase resume intent');
+   t.assert(t.model().paused&&!t.model().audible&&t.model().loads===loads&&t.model().epoch===epoch,'denied automatic probe must retain the paused native decoder');
+   await audio.play();await t.until(()=>t.model().audible,'native playing recovers after the opaque automatic denial');await t.wait(40);
+   t.assert(t.audio()===audio&&t.model().loads===loads&&t.model().epoch===epoch&&Math.abs(t.model().position-43)<.6,'native resume after opaque denial keeps decoder and checkpoint');
+   t.assert(document.getElementById('playButton').getAttribute('aria-label')==='Пауза','native resume after capture restores visible playing state');
+ }''',
+ 'system_play_healthy_paused_element_keeps_decoder': r'''async tracks=>{
+   const t=__test;await t.start(tracks);t.pausePlayback();await t.wait();
+   const audio=t.audio(),loads=t.model().loads,epoch=t.model().epoch;
+   __command('play',{},true);await t.until(()=>t.model().audible,'Control Center Play resumes a healthy paused element');await t.wait(40);
+   t.assert(t.audio()===audio&&t.model().loads===loads&&t.model().epoch===epoch,'a healthy Control Center Play must not assign src or call load');
+   t.assert(Math.abs(t.model().position-43)<.6,'play-first resume retains current position');
+ }''',
+ 'play_first_waits_for_metadata_to_restore_checkpoint': r'''async tracks=>{
+   const t=__test;await t.start(tracks);__media.externalPause(t.audio());await t.wait(50);
+   const audio=t.audio(),model=t.model(),loads=model.loads,epoch=model.epoch;
+   model.ready=0;model.position=0;model.duration=NaN;
+   __command('play',{},true);setTimeout(()=>__media.metadataReady(audio),80);
+   await t.until(()=>t.model().audible,'existing decoder resumes after delayed metadata');await t.wait(40);
+   t.assert(Math.abs(t.model().position-43)<.6,'metadata arriving after Play must restore the43s interruption checkpoint');
+   t.assert(t.audio()===audio&&t.model().loads===loads&&t.model().epoch===epoch,'delayed metadata must not require source reset');
+ }''',
+ 'system_play_retries_despite_cached_interrupted_state': r'''async tracks=>{
+   const t=__test;await t.start(tracks);__session.change('interrupted');__media.externalPause(t.audio());await t.wait(60);
+   const plays=t.model().plays;
+   __command('play',{},true);await t.until(()=>t.model().plays>plays,'Control Center Play must reach audio.play despite cached interrupted state',180);
+   await t.until(()=>t.model().audible,'a successful Play must not await an absent AudioSession statechange');await t.wait(40);
+   t.assert(__session.state==='interrupted'&&document.getElementById('playButton').getAttribute('aria-label')==='Пауза','accepted playback takes precedence over the stale AudioSession snapshot');
+   t.assert(Math.abs(t.model().position-43)<.6,'authoritative Play keeps interruption checkpoint');
+ }''',
+ 'system_play_supersedes_pending_background_attempt': r'''async tracks=>{
+   const t=__test;await t.start(tracks);t.pausePlayback();await t.wait();
+   __media.next='hold';window.__pending=t.resumePlayback(true);await t.wait(40);const plays=t.model().plays;
+   __command('play',{},true);await t.until(()=>t.model().plays>plays,'fresh Control Center Play must replace the old pending attempt',180);
+   await t.until(()=>t.model().audible,'fresh command starts playback without waiting for the old timeout',240);
+   t.assert(Math.abs(t.model().position-43)<.6,'superseding a background attempt preserves its checkpoint');
+   await t.wait(400);t.assert(t.model().audible,'late cancellation from the replaced attempt cannot stop the new command');
+ }''',
+ 'native_playing_and_clock_override_stale_session_state': r'''async tracks=>{
+   const t=__test;await t.start(tracks);const audio=t.audio(),loads=t.model().loads,epoch=t.model().epoch;
+   __session.change('interrupted');__media.externalPause(audio);await t.wait(60);
+   await audio.play();await t.until(()=>t.model().audible,'native auto-resume plays while DOM state is stale');await t.wait(260);
+   t.assert(__session.state==='interrupted'&&t.model().position>43.1,'the native clock progresses despite cached interrupted state');
+   t.assert(t.model().loads===loads&&t.model().epoch===epoch&&t.audio()===audio,'confirmed native playing must not trigger a decoder reset');
+   t.assert(document.getElementById('playButton').getAttribute('aria-label')==='Пауза','native playing and time progression restore the visible playing state');
+ }''',
+ 'audio_session_type_stays_playback_through_recovery': r'''async tracks=>{
+   const t=__test;await t.start(tracks);__session.change('interrupted');__media.externalPause(t.audio());await t.wait(50);
+   __session.change('active');await t.until(()=>t.model().audible,'normal interruption recovery');
+   t.pausePlayback();await t.wait();__command('play',{},true);await t.until(()=>t.model().audible,'explicit replay after recovery');
+   t.assert(__session.types.length>0&&__session.types.every(type=>type==='playback'),'recovery must keep AudioSession.type playback, never cycle through auto');
+ }''',
  'repeated_interruption_frozen_checkpoint': r'''async tracks=>{
    const t=__test;await t.start(tracks);const a=t.audio();const loads=t.model().loads;__session.change('interrupted');t.model().audible=false;await t.wait();
    t.assert(t.model().loads===loads,'microphone interruption must not reset decoder while capture owns audio');
@@ -101,11 +212,13 @@ SCENARIOS = {
    await t.until(()=>t.model().audible,'system interruption pause arriving before AudioSession must auto-resume');
    t.assert(Math.abs(t.model().position-43)<.5,'system interruption must resume at checkpoint');
  }''',
- 'automatic_system_play_waits_for_microphone': r'''async tracks=>{
-   const t=__test;await t.start(tracks);__command('pause',{},false);__session.change('interrupted');t.model().audible=false;await t.wait();
-   const plays=t.model().plays,loads=t.model().loads;__command('play',{},false);await t.wait(80);
-   t.assert(t.model().plays===plays&&t.model().loads===loads,'automatic Play must not restart decoder while microphone owns known interrupted session');
-   __session.change('active');__command('play',{},false);await t.until(()=>t.model().audible,'automatic system Play resumes remembered intent');t.assert(Math.abs(t.model().position-43)<.5,'automatic Play restores checkpoint');
+ 'automatic_recovery_waits_for_microphone': r'''async tracks=>{
+   const t=__test;await t.start(tracks);__command('pause',{},false);
+   t.assert(navigator.mediaSession.playbackState==='paused','system Pause must publish paused synchronously so the widget exposesPlay');
+   __session.change('interrupted');t.model().audible=false;await t.wait();
+   const plays=t.model().plays,loads=t.model().loads;__session.change('interrupted');window.dispatchEvent(new Event('focus'));await t.wait(80);
+   t.assert(t.model().plays===plays&&t.model().loads===loads,'automatic recovery must wait while microphone owns known interrupted session');
+   __session.change('active');await t.until(()=>t.model().audible,'automatic recovery resumes remembered intent');t.assert(Math.abs(t.model().position-43)<.5,'automatic recovery restores checkpoint');
  }''',
  'native_auto_play_without_audio_session': r'''async tracks=>{
    const t=__test;Object.defineProperty(navigator,'audioSession',{configurable:true,value:undefined});await t.start(tracks);
@@ -115,7 +228,8 @@ SCENARIOS = {
    t.assert(Math.abs(t.model().position-43)<.5,'fallback restores checkpoint');
  }''',
  'manual_control_center_pause_stays_paused': r'''async tracks=>{
-   const t=__test;await t.start(tracks);__command('pause',{},true);await t.wait(320);
+   const t=__test;await t.start(tracks);__command('pause',{},true);
+   t.assert(navigator.mediaSession.playbackState==='paused','a manual Control Center Pause must publish its state inside the callback');await t.wait(320);
    const p=t.model().plays;__session.change('active');window.dispatchEvent(new Event('focus'));document.dispatchEvent(new Event('visibilitychange'));await t.wait(250);
    t.assert(t.model().paused&&!t.model().audible&&t.model().plays===p,'explicit Control Center pause must remain paused');
  }''',
@@ -129,12 +243,12 @@ SCENARIOS = {
    __command('play',{},true);await t.until(()=>t.model().audible,'explicit Play after manual pause');t.assert(Math.abs(t.model().position-43)<.5,'manual pause recovery position');
  }''',
  'background_denied_then_system_play': r'''async tracks=>{
-   const t=__test;await t.start(tracks);__hidden=true;__session.change('interrupted');await t.wait();__media.next='deny';__session.change('active');await t.wait(300);
+   const t=__test;await t.start(tracks);__hidden=true;__session.change('interrupted');__media.externalPause(t.audio());await t.wait();__media.next='deny';__session.change('active');await t.wait(300);
    t.assert(!t.model().audible,'autoplay denial must not claim output playing');t.assert(navigator.mediaSession.playbackState==='paused','Control Center must show Play after denied recovery');const plays=t.model().plays;await t.wait(300);t.assert(t.model().plays===plays,'no autoplay retry loop');
    __command('play',{},true);await t.until(()=>t.model().audible,'explicit system Play after denied background recovery');t.assert(Math.abs(t.model().position-43)<.5,'denial recovery position');
  }''',
  'play_promise_before_metadata_and_playing': r'''async tracks=>{
-   const t=__test;await t.start(tracks);__session.change('interrupted');await t.wait();t.model().metadataDelay=150;t.model().playingDelay=60;__media.options={metadataDelay:150,playingDelay:60};__media.next='promise-only';
+   const t=__test;await t.start(tracks);__session.change('interrupted');__media.externalPause(t.audio());await t.wait();t.model().metadataDelay=150;t.model().playingDelay=60;__media.options={metadataDelay:150,playingDelay:60};__media.next='promise-only';
    __session.change('active');await t.wait(30);
    t.assert(document.getElementById('playButton').getAttribute('aria-label')==='Воспроизвести','play() promise resolving before metadata/playing must not mark UI playing');
    await t.until(()=>t.model().audible,'delayed actual playing event');t.assert(Math.abs(t.model().position-43)<.5,'metadata listener must remain alive after early play promise resolution');
@@ -252,21 +366,22 @@ async def native_checks(page):
     start=await page.evaluate('({position:__test.elements.audio.currentTime,paused:__test.elements.audio.paused,ready:__test.elements.audio.readyState,mediaSession:!!navigator.mediaSession,state:navigator.mediaSession?.playbackState,events:__nativeEvents})')
     await page.evaluate('__test.elements.audio.currentTime=43')
     await page.wait_for_function('__test.elements.audio.currentTime>=43')
-    await page.evaluate('__session.change("interrupted");__test.elements.audio.pause()')
+    await page.evaluate('window.__resumeNativeAudio=__test.elements.audio;window.__resumeNativeSource=__resumeNativeAudio.getAttribute("src");window.__resumeEventCount=__nativeEvents.length;__session.change("interrupted");__test.elements.audio.pause()')
     await page.wait_for_timeout(150)
     interrupted=await page.evaluate('({position:__test.elements.audio.currentTime,paused:__test.elements.audio.paused,ui:document.getElementById("playButton").getAttribute("aria-label")})')
     await page.evaluate('__session.change("active")')
     await page.wait_for_function('!__test.elements.audio.paused&&__test.elements.audio.currentTime>43.1',timeout=5000)
-    resumed=await page.evaluate('({position:__test.elements.audio.currentTime,paused:__test.elements.audio.paused,volume:__test.elements.audio.volume,muted:__test.elements.audio.muted,state:navigator.mediaSession?.playbackState,events:__nativeEvents.slice(-16)})')
+    resumed=await page.evaluate('({position:__test.elements.audio.currentTime,paused:__test.elements.audio.paused,volume:__test.elements.audio.volume,muted:__test.elements.audio.muted,state:navigator.mediaSession?.playbackState,sameElement:__test.elements.audio===__resumeNativeAudio,sameSource:__test.elements.audio.getAttribute("src")===__resumeNativeSource,emptiedDuringResume:__nativeEvents.slice(__resumeEventCount).some(event=>event.type==="emptied"),events:__nativeEvents.slice(-16)})')
     await page.evaluate('__command("pause",{},true)')
     await page.wait_for_timeout(320)
     cc_pause=await page.evaluate('({position:__test.elements.audio.currentTime,paused:__test.elements.audio.paused,state:navigator.mediaSession?.playbackState})')
-    await page.evaluate('__command("play",{},true)')
-    await page.wait_for_function('!__test.elements.audio.paused',timeout=5000)
+    await page.evaluate('window.__controlResumePosition=__test.elements.audio.currentTime;window.__controlResumeEventCount=__nativeEvents.length;__command("play",{},true)')
+    await page.wait_for_function('!__test.elements.audio.paused&&__test.elements.audio.currentTime>__controlResumePosition+.05',timeout=5000)
+    cc_play=await page.evaluate('({sameElement:__test.elements.audio===__resumeNativeAudio,sameSource:__test.elements.audio.getAttribute("src")===__resumeNativeSource,emptiedDuringResume:__nativeEvents.slice(__controlResumeEventCount).some(event=>event.type==="emptied")})')
     await page.evaluate('__command("nexttrack",{},true)')
     await page.wait_for_function('__test.state.currentTrack.id===2&&__test.elements.audio.currentTime>.1',timeout=5000)
-    checks={'played':not start['paused'] and start['position']>.2,'interruption_paused':interrupted['paused'],'resume_checkpoint':43<=resumed['position']<44,'full_element_volume':resumed['volume']==1 and not resumed['muted'],'system_pause':cc_pause['paused']}
-    return {'start':start,'interrupted':interrupted,'resumed':resumed,'control_center_handler_pause':cc_pause,'checks':checks,'nativeAudio':True,'audioSession':'simulated','systemControlCenter':'handler invocation, not physical iOS','audibleOutput':'not measured; HTMLAudioElement events/time progression only'}
+    checks={'played':not start['paused'] and start['position']>.2,'interruption_paused':interrupted['paused'],'resume_checkpoint':43<=resumed['position']<44,'full_element_volume':resumed['volume']==1 and not resumed['muted'],'native_resume_keeps_decoder':resumed['sameElement'] and resumed['sameSource'] and not resumed['emptiedDuringResume'],'system_pause':cc_pause['paused'],'system_play_keeps_decoder':cc_play['sameElement'] and cc_play['sameSource'] and not cc_play['emptiedDuringResume']}
+    return {'start':start,'interrupted':interrupted,'resumed':resumed,'control_center_handler_pause':cc_pause,'control_center_handler_play':cc_play,'checks':checks,'nativeAudio':True,'audioSession':'simulated','systemControlCenter':'handler invocation, not physical iOS','audibleOutput':'not measured; HTMLAudioElement events/time progression only'}
 
 async def main(engines, case_patterns):
     results=[]

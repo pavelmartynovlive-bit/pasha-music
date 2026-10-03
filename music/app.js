@@ -1,5 +1,6 @@
 const CONNECTION_STORAGE_KEY = "pashaMusicConnectionV1";
 const LIBRARY_STORAGE_KEY = "pashaMusicLibraryV2";
+const PLAYBACK_DIAGNOSTICS_KEY = "pashaMusicPlaybackDiagnosticsV1";
 const SEARCH_RESULT_LIMIT = 20;
 const SUGGESTION_DELAY = 280;
 const PUBLIC_BACKEND_URL = "https://pasha-music.132-243-23-229.sslip.io";
@@ -865,19 +866,35 @@ let playbackWatchdog = 0;
 let watchdogRepairs = 0;
 let pendingAudioReplacement = null;
 let foregroundRepairPending = false;
-const playbackEvents = [];
+const playbackRun = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+const storedPlaybackEvents = readJson(PLAYBACK_DIAGNOSTICS_KEY, []);
+const playbackEvents = Array.isArray(storedPlaybackEvents) ? storedPlaybackEvents.slice(-80) : [];
+
+function persistPlaybackEvents() {
+  try { localStorage.setItem(PLAYBACK_DIAGNOSTICS_KEY, JSON.stringify(playbackEvents)); }
+  catch { /* Diagnostics must never prevent playback when storage is full. */ }
+}
+function audioSessionState() {
+  // Safari exposes AudioSession.type while .state is behind a separate flag.
+  if (!navigator.audioSession) return "unsupported";
+  return navigator.audioSession.state || "unavailable";
+}
 
 function recordPlaybackEvent(event, detail = "") {
-  playbackEvents.push({ time: Date.now(), event, detail, session: navigator.audioSession?.state || "unsupported", wanted: playbackWanted, interrupted: interruptedPlayback, position: Math.round((elements.audio.currentTime || 0) * 100) / 100, checkpoint: interruptionPosition ?? savedPlaybackPosition, paused: elements.audio.paused, readyState: elements.audio.readyState, muted: elements.audio.muted, volume: elements.audio.volume });
+  playbackEvents.push({ time: Date.now(), run: playbackRun, event, detail, session: audioSessionState(), hidden: document.hidden, wanted: playbackWanted, interrupted: interruptedPlayback, mediaState: navigator.mediaSession?.playbackState || "none", position: Math.round((elements.audio.currentTime || 0) * 100) / 100, checkpoint: interruptionPosition ?? savedPlaybackPosition, paused: elements.audio.paused, readyState: elements.audio.readyState, errorCode: elements.audio.error?.code || null, muted: elements.audio.muted, volume: elements.audio.volume });
   if (playbackEvents.length > 80) playbackEvents.shift();
+  persistPlaybackEvents();
 }
 // No keys, URLs or track metadata: useful for diagnosing native event ordering.
-window.getMusicPlaybackDiagnostics = () => JSON.stringify({ userAgent: navigator.userAgent, events: playbackEvents }, null, 2);
+window.getMusicPlaybackDiagnostics = () => JSON.stringify({ version: 63, run: playbackRun, userAgent: navigator.userAgent, events: playbackEvents }, null, 2);
+recordPlaybackEvent("page-start");
+window.addEventListener("pagehide", () => recordPlaybackEvent("page-hide"));
+window.addEventListener("pageshow", () => recordPlaybackEvent("page-show"));
+document.addEventListener("visibilitychange", () => recordPlaybackEvent("page-visibility", document.hidden ? "hidden" : "visible"));
 
-function configureAudioSession(reset = false) {
+function configureAudioSession() {
   try {
     if (!navigator.audioSession) return;
-    if (reset) navigator.audioSession.type = "auto";
     navigator.audioSession.type = "playback";
   } catch { /* Older Safari versions manage the audio session themselves. */ }
 }
@@ -935,6 +952,9 @@ function pausePlayback() {
 }
 function handleMediaPause() {
   recordPlaybackEvent("system-pause");
+  // Publish inside the native callback, while WebKit protects its saved
+  // interruption state. Delaying this keeps the widget stuck on Pause.
+  setPlaybackButtonState(false);
   if (!playbackWanted) return;
   if (navigator.audioSession?.state === "interrupted") {
     markPlaybackInterrupted();
@@ -942,7 +962,7 @@ function handleMediaPause() {
   }
   // WebKit sends the same action for a microphone interruption and a remote
   // user Pause. AudioSession.state is updated on a later task, not synchronously.
-  if (!pendingMediaPause) pendingMediaPause = { track: state.currentTrack, position: playbackPosition(), wanted: playbackWanted, started: performance.now(), rearmed: false };
+  if (!pendingMediaPause) pendingMediaPause = { track: state.currentTrack, position: playbackPosition(), wanted: playbackWanted, nativePaused: elements.audio.paused, started: performance.now(), rearmed: false };
   recentMediaPause = pendingMediaPause;
   setPlaybackButtonState(false, false);
   clearTimeout(mediaPauseTimer);
@@ -959,7 +979,11 @@ function handleMediaPause() {
       mediaPauseTimer = setTimeout(settlePause, 250);
       return;
     }
-    if (navigator.audioSession?.state === "interrupted") markPlaybackInterrupted(pending.position);
+    const sessionState = navigator.audioSession?.state;
+    // With Safari's type-only AudioSession API, a native element Pause is the
+    // available interruption signal. Our remote Pause handler has not paused
+    // the element yet, so preserve the intent when iOS did it independently.
+    if (sessionState === "interrupted" || (!sessionState && pending.nativePaused)) markPlaybackInterrupted(pending.position);
     else {
       pausePlayback();
       // Keep a short-lived checkpoint if the native statechange arrives late.
@@ -1020,7 +1044,7 @@ async function reloadPlayback(source, position, isCurrent, signal, fresh = false
   audio.pause();
   audio.muted = false;
   audio.volume = 1;
-  configureAudioSession(true);
+  configureAudioSession();
   // Both listeners must survive an early play() promise resolution.
   let actuallyPlaying = false;
   const onPlaying = () => { actuallyPlaying = true; };
@@ -1062,9 +1086,42 @@ async function reloadPlayback(source, position, isCurrent, signal, fresh = false
     loadController.abort();
   }
 }
+async function continueExistingPlayback(audio, position, restorePosition, signal) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal.addEventListener("abort", abort, { once: true });
+  if (signal.aborted) abort();
+  configureAudioSession();
+  audio.muted = false;
+  audio.volume = 1;
+  let actuallyPlaying = !audio.paused && audio.readyState >= 3 && !audio.seeking;
+  const onPlaying = () => { actuallyPlaying = true; };
+  audio.addEventListener("playing", onPlaying);
+  try {
+    const metadata = restorePosition ? waitForAudio(audio, ["loadedmetadata", "durationchange"], () => audio.readyState >= 1, controller.signal) : Promise.resolve();
+    const positioned = metadata.then(async () => {
+      if (!restorePosition) return;
+      if (controller.signal.aborted || elements.audio !== audio) throw new DOMException("Playback cancelled", "AbortError");
+      if (Math.abs(audio.currentTime - position) <= .5) return;
+      const target = Number.isFinite(audio.duration) ? Math.min(position, Math.max(0, audio.duration - .05)) : position;
+      audio.currentTime = target;
+      await waitForAudio(audio, ["seeked", "timeupdate"], () => !audio.seeking && Math.abs(audio.currentTime - target) < 1, controller.signal);
+    });
+    const playing = waitForAudio(audio, ["playing"], () => actuallyPlaying, controller.signal);
+    // Preserve the existing native player and call play in the control gesture.
+    // pause()/load() here can deactivate iOS background audio before it resumes.
+    const started = playWithTimeout(audio, controller.signal);
+    await Promise.all([started, playing, positioned]);
+  } finally {
+    audio.removeEventListener("playing", onPlaying);
+    signal.removeEventListener("abort", abort);
+    controller.abort();
+  }
+}
+
 function schedulePlaybackWatchdog() {
   clearTimeout(playbackWatchdog);
-  if (!playbackWanted || navigator.audioSession?.state === "interrupted") return;
+  if (!playbackWanted || interruptedPlayback) return;
   const audio = elements.audio;
   const start = audio.currentTime;
   const attempt = resumeAttempt;
@@ -1085,11 +1142,17 @@ function schedulePlaybackWatchdog() {
   }, 1500);
 }
 
-function resumePlayback(force = false, fresh = false) {
+function resumePlayback(force = false, fresh = false, fromControl = false) {
   playbackWanted = true;
   clearPendingMediaPause();
   recentMediaPause = null;
-  if (navigator.audioSession?.state === "interrupted") {
+  if (fromControl) {
+    recordPlaybackEvent("control-play");
+    // A new control callback carries a fresh activation. A suspended timer or
+    // an old pending play promise must not consume that new attempt.
+    if (resumePromise) { recordPlaybackEvent("control-replaces-pending"); cancelPlaybackAttempt(); }
+  }
+  if (!fromControl && navigator.audioSession?.state === "interrupted") {
     markPlaybackInterrupted();
     recordPlaybackEvent("resume-deferred-for-capture");
     return Promise.resolve(false);
@@ -1105,8 +1168,11 @@ function resumePlayback(force = false, fresh = false) {
   const controller = new AbortController();
   recoveryController = controller;
   const isCurrent = () => attempt === resumeAttempt && playbackWanted && state.currentTrack === track && !controller.signal.aborted;
-  const resetOutput = force || outputNeedsReset;
-  if (resetOutput) {
+  // An interruption needs its checkpoint restored, not a new decoder. Only
+  // a confirmed error/stall requests pause/load or replacement.
+  const resetOutput = force;
+  const restorePosition = outputNeedsReset || interruptionPosition !== null;
+  if (resetOutput || restorePosition) {
     // A replacement may have currentTime=0 until metadata arrives. Never let
     // Pause/cancellation overwrite the position captured before its creation.
     interruptionPosition ??= position;
@@ -1114,6 +1180,7 @@ function resumePlayback(force = false, fresh = false) {
     outputNeedsReset = true;
   }
   let resolveResume;
+  let preserveNativeInterruption = false;
   const promise = new Promise((resolve) => { resolveResume = resolve; });
   resumePromise = promise;
   recordPlaybackEvent("resume", resetOutput ? "repair" : "play");
@@ -1121,10 +1188,16 @@ function resumePlayback(force = false, fresh = false) {
     try {
       try {
         if (resetOutput) await reloadPlayback(source, position, isCurrent, controller.signal, fresh);
-        else { configureAudioSession(); await playWithTimeout(audio, controller.signal); }
+        else await continueExistingPlayback(audio, position, restorePosition, controller.signal);
       } catch (error) {
         if (!isCurrent()) return false;
-        if (error.name === "NotAllowedError" || navigator.audioSession?.state === "interrupted") throw error;
+        const sessionState = navigator.audioSession?.state;
+        const unknownCapture = !fromControl && !resetOutput && interruptedPlayback && !sessionState && !elements.audio.error && error.name !== "NotSupportedError";
+        preserveNativeInterruption = unknownCapture && document.hidden;
+        // An opaque session's pending play may time out during a long voice
+        // recording. That is not proof of decoder failure: keep this automatic
+        // probe play-only, preserving the native player until capture ends.
+        if (error.name === "NotAllowedError" || (!fromControl && sessionState === "interrupted") || unknownCapture) throw error;
         // One fresh decoder attempt. Refresh a rejected/expired source first;
         // an otherwise stalled decoder does not need another backend request.
         let refreshedSource = source;
@@ -1145,7 +1218,7 @@ function resumePlayback(force = false, fresh = false) {
         await reloadPlayback(refreshedSource, position, isCurrent, controller.signal, true);
       }
       if (!isCurrent()) return false;
-      if (elements.audio.paused || navigator.audioSession?.state === "interrupted") throw new Error("Audio session is not ready");
+      if (elements.audio.paused) throw new Error("Audio session is not ready");
       interruptedPlayback = false;
       outputNeedsReset = false;
       interruptionPosition = null;
@@ -1160,9 +1233,11 @@ function resumePlayback(force = false, fresh = false) {
         outputNeedsReset = true;
         interruptionPosition ??= position;
         savedPlaybackPosition = interruptionPosition;
-        setPlaybackButtonState(false, navigator.audioSession?.state !== "interrupted");
-        recordPlaybackEvent("resume-failed", error.name || "Error");
-        setStatus(error.name === "NotAllowedError" ? "iOS не разрешила автопродолжение. Нажмите Play в системном плеере." : "Не удалось продолжить воспроизведение. Нажмите Play ещё раз.", true);
+        // A late publication outside the native Pause callback can overwrite
+        // WebKit's saved Playing state during an opaque background capture.
+        setPlaybackButtonState(false, !preserveNativeInterruption && (fromControl || navigator.audioSession?.state !== "interrupted"));
+        recordPlaybackEvent(preserveNativeInterruption ? "resume-held-for-capture" : "resume-failed", error.name || "Error");
+        if (!preserveNativeInterruption) setStatus(error.name === "NotAllowedError" ? "iOS не разрешила автопродолжение. Нажмите Play в системном плеере." : "Не удалось продолжить воспроизведение. Нажмите Play ещё раз.", true);
       }
       return false;
     } finally {
@@ -1185,11 +1260,10 @@ function onPlaybackForeground() {
   // Let a queued AudioSession statechange run before deciding a remote Pause.
   if (pendingMediaPause) handleMediaPause();
   if (returnedWhilePlaying && playbackWanted && !pendingMediaPause && !resumePromise && !interruptedPlayback) {
-    // Ducking in another app may produce no web event at all. One repair on
-    // return reacquires the output without guessing when that capture began or
-    // rewinding music that played normally while the app was in the background.
-    recordPlaybackEvent("foreground-output-repair");
-    void resumePlayback(true);
+    // Another app may interrupt without a web event. Try the existing player
+    // on return; rebuild it only if playback fails or its clock stays stalled.
+    recordPlaybackEvent("foreground-resume-check");
+    void resumePlayback();
   } else resumeAfterInterruption();
 }
 document.addEventListener("visibilitychange", onPlaybackForeground);
@@ -1200,7 +1274,14 @@ navigator.audioSession?.addEventListener("statechange", () => {
   const sessionState = navigator.audioSession.state;
   const wasInterrupted = previousAudioSessionState === "interrupted";
   previousAudioSessionState = sessionState;
-  recordPlaybackEvent("session-state", sessionState);
+  recordPlaybackEvent("session-state", sessionState || "unavailable");
+  if (!sessionState) {
+    // Safari can dispatch statechange without exposing its state property.
+    // A paused interrupted player may now be admitted by the native session;
+    // try the existing element, letting iOS reject capture that is still active.
+    if (playbackWanted && interruptedPlayback && elements.audio.paused && !resumePromise && !pendingMediaPause) void resumePlayback();
+    return;
+  }
   if (sessionState === "interrupted") {
     const pending = pendingMediaPause || recentMediaPause;
     if (!playbackWanted && pending?.wanted && pending.track === state.currentTrack && performance.now() - pending.started < 1500) playbackWanted = true;
@@ -1232,13 +1313,29 @@ function bindAudioEvents(audio) {
     if (!current()) return;
     recordPlaybackEvent("audio-playing");
     if (!playbackWanted) { audio.pause(); return; }
-    if (resumePromise || pendingMediaPause || navigator.audioSession?.state === "interrupted") return;
-    if (outputNeedsReset) { void resumePlayback(); return; }
+    if (resumePromise) return;
+    const nativePause = pendingMediaPause?.nativePaused;
+    if (pendingMediaPause) {
+      if (!nativePause) return;
+      clearPendingMediaPause(); recentMediaPause = null;
+    }
+    const wasInterrupted = interruptedPlayback || outputNeedsReset || nativePause;
+    if (wasInterrupted && interruptionPosition !== null && audio.readyState >= 1 && Math.abs(audio.currentTime - interruptionPosition) > .5) {
+      const target = Number.isFinite(audio.duration) ? Math.min(interruptionPosition, Math.max(0, audio.duration - .05)) : interruptionPosition;
+      audio.currentTime = target;
+    }
+    // Native playing is stronger evidence than a missing/stale AudioSession
+    // getter. Do not destroy successful iOS auto-resume with pause/load.
+    interruptedPlayback = false;
+    outputNeedsReset = false;
+    interruptionPosition = null;
+    if (wasInterrupted) recordPlaybackEvent("native-resumed");
     setPlaybackButtonState(true); schedulePlaybackWatchdog();
   });
   audio.addEventListener("pause", () => {
     if (!current()) return;
     recordPlaybackEvent("audio-pause");
+    if (pendingMediaPause) pendingMediaPause.nativePaused = true;
     if (playbackWanted && !audio.ended && !resumePromise && !pendingMediaPause) markPlaybackInterrupted();
     setPlaybackButtonState(false, !playbackWanted);
   });
@@ -1374,9 +1471,9 @@ elements.playButton.addEventListener("click", () => {
   if (!elements.audio.src) {
     const initialQueue = state.searchActive && state.searchTracks.length ? state.searchTracks.slice(0, SEARCH_RESULT_LIMIT) : state.libraryTracks;
     if (initialQueue.length) playTrack(initialQueue[0], initialQueue);
-  } else if (elements.audio.paused || interruptedPlayback || outputNeedsReset) void resumePlayback(true); else pausePlayback();
+  } else if (elements.audio.paused || interruptedPlayback || outputNeedsReset) void resumePlayback(false, false, true); else pausePlayback();
 });
-elements.miniPlayButton.addEventListener("click", () => { if (elements.audio.paused || interruptedPlayback || outputNeedsReset) void resumePlayback(true); else pausePlayback(); });
+elements.miniPlayButton.addEventListener("click", () => { if (elements.audio.paused || interruptedPlayback || outputNeedsReset) void resumePlayback(false, false, true); else pausePlayback(); });
 elements.previousButton.addEventListener("click", () => moveTrack(-1)); elements.nextButton.addEventListener("click", () => moveTrack(1)); elements.miniNextButton.addEventListener("click", () => moveTrack(1));
 elements.seek.addEventListener("input", () => {
   if (Number.isFinite(elements.audio.duration)) {
@@ -1389,7 +1486,7 @@ document.addEventListener("keydown", (event) => {
 });
 if ("mediaSession" in navigator) {
   const actions = {
-    play: () => { void resumePlayback(true); }, pause: handleMediaPause,
+    play: () => { void resumePlayback(false, false, true); }, pause: handleMediaPause,
     previoustrack: () => moveTrack(-1), nexttrack: () => moveTrack(1),
     seekto: ({ seekTime }) => seekPlayback(seekTime),
     seekbackward: ({ seekOffset = 10 }) => seekPlayback(playbackPosition() - seekOffset),
