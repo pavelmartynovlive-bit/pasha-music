@@ -198,15 +198,11 @@ function calibrateBottomInset() {
   if (document.documentElement.style.getPropertyValue("--viewport-bottom-inset") !== value) {
     document.documentElement.style.setProperty("--viewport-bottom-inset", value);
   }
-  // Center controls in the painted part of the bar. On iOS, visualViewport can
-  // report a shorter height even when that strip still paints on screen.
-  const screenHeight = window.matchMedia("(orientation: landscape)").matches
-    ? Math.min(window.screen.width, window.screen.height) : window.screen.height;
-  // innerHeight can underreport the same strip as visualViewport even though
-  // it is painted. A viewport-fit=cover standalone app fills the screen.
-  const paintedHeight = screenHeight || window.innerHeight;
-  const clip = Math.min(deficit, Math.max(0, document.body.clientHeight - paintedHeight));
-  const clipValue = `${Math.ceil(clip)}px`;
+  // The physical screen can extend below the paintable WebKit viewport.
+  // Background color can fill that strip, but buttons cannot: keep their
+  // entire hit area above the closed-keyboard visual viewport boundary.
+  // Freeze this clearance while the keyboard is open so navigation stays put.
+  const clipValue = value;
   if (document.documentElement.style.getPropertyValue("--bottom-bar-clip-inset") !== clipValue) {
     document.documentElement.style.setProperty("--bottom-bar-clip-inset", clipValue);
   }
