@@ -88,9 +88,29 @@ function setStatus(message, isError = false) {
 }
 function saveLibrary() { localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(state.library)); }
 function showSetup(show = true) { elements.setupPanel.hidden = !show; if (show) elements.backendUrlInput.focus(); }
+let searchFocusAnchor = null;
+let searchFocusFrame = 0;
+let searchFocusTimer = 0;
+function settleSearchFocus() {
+  if (!searchFocusAnchor || document.activeElement !== elements.searchInput) return;
+  cancelAnimationFrame(searchFocusFrame);
+  searchFocusFrame = requestAnimationFrame(() => {
+    if (!searchFocusAnchor || document.activeElement !== elements.searchInput) return;
+    elements.mainScreen.scrollTop = searchFocusAnchor.scrollTop;
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  });
+  clearTimeout(searchFocusTimer);
+  searchFocusTimer = setTimeout(() => { searchFocusAnchor = null; }, 450);
+}
+function prepareSearchFocus() {
+  searchFocusAnchor = { scrollTop: elements.mainScreen.scrollTop };
+  settleSearchFocus();
+}
 function focusSearchInput() {
   if (state.currentView !== "home" || state.homeTab !== "search" || !elements.setupPanel.hidden) return;
+  prepareSearchFocus();
   elements.searchInput.focus({ preventScroll: true });
+  settleSearchFocus();
 }
 function normalizeBackendUrl(value) {
   const url = new URL(value.trim());
@@ -625,7 +645,21 @@ elements.closeSetupButton.addEventListener("click", () => showSetup(false));
 elements.homeTabs.addEventListener("click", (event) => { const button = event.target.closest("[data-home-tab]"); if (button) { setHomeTab(button.dataset.homeTab); if (state.homeTab === "search") focusSearchInput(); } });
 elements.searchForm.addEventListener("submit", (event) => { event.preventDefault(); searchMusic(elements.searchInput.value); elements.searchInput.blur(); });
 elements.searchInput.addEventListener("input", scheduleSuggestions);
-elements.searchInput.addEventListener("focus", scheduleSuggestions);
+elements.searchInput.addEventListener("pointerdown", (event) => {
+  if (event.isPrimary && event.button === 0 && document.activeElement !== elements.searchInput) {
+    event.preventDefault();
+    focusSearchInput();
+  }
+});
+elements.searchInput.addEventListener("focus", () => {
+  if (!searchFocusAnchor) prepareSearchFocus();
+  settleSearchFocus(); scheduleSuggestions();
+});
+elements.searchInput.addEventListener("blur", () => {
+  searchFocusAnchor = null; clearTimeout(searchFocusTimer); cancelAnimationFrame(searchFocusFrame);
+});
+window.visualViewport?.addEventListener("resize", settleSearchFocus);
+window.visualViewport?.addEventListener("scroll", settleSearchFocus);
 elements.clearSearchButton.addEventListener("click", () => clearSearch(true));
 elements.librarySwitcher.addEventListener("click", (event) => { if (event.target.dataset.libraryView) { state.libraryView = event.target.dataset.libraryView; renderPersonalLibrary(); } });
 elements.collectionBackButton.addEventListener("click", () => { void goBack(); });
