@@ -529,6 +529,34 @@ app.get("/api/tracks/:ownerId/:audioId/recommendations", async (req, res) => {
   }
 });
 
+app.get("/api/artists/:artistId", async (req, res) => {
+  const name = String(req.query.name || "").trim();
+  if (!name) return res.status(400).json({ ok: false, error: "Нужно имя исполнителя" });
+  try {
+    const tracks = await withVkAudio(async (vk) => {
+      const response = await vk.request("audio.search", new URLSearchParams({
+        q: name, performer_only: "1", sort: "2", count: "100", offset: "0",
+      }));
+      if (!response.success) throw response.error;
+      const items = response.data?.response?.items;
+      if (!Array.isArray(items)) throw new Error("VK не вернул треки исполнителя");
+      const normalize = (value) => String(value || "").trim().toLocaleLowerCase();
+      const seen = new Set();
+      return items.map(getAudioItem).filter((track) => {
+        const matches = track.artists?.some((artist) =>
+          req.params.artistId !== "by-name" && artist.id
+            ? String(artist.id) === req.params.artistId
+            : normalize(artist.name) === normalize(name)
+        ) || (!track.artists?.length && normalize(track.artist) === normalize(name));
+        const key = `${track.ownerId}_${track.id}`;
+        if (!matches || seen.has(key)) return false;
+        seen.add(key); return true;
+      });
+    });
+    res.json({ ok: true, result: { artist: { id: req.params.artistId, name }, tracks: tracks.slice(0, 20), albums: albumsFromTracks(tracks, 20) } });
+  } catch (error) { sendVkError(res, error, "VK getArtist"); }
+});
+
 app.get("/api/albums/:ownerId/:albumId", async (req, res) => {
   const title = String(req.query.title || "").trim();
   const artist = String(req.query.artist || "").trim();

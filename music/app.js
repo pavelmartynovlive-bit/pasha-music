@@ -23,7 +23,8 @@ const elementIds = [
   "playerMixButton", "previousButton", "searchAlbumGroup", "searchAlbumList", "searchForm", "searchInput",
   "searchResultList", "searchResults", "searchSuggestions", "searchTrackGroup", "sectionTabs", "sectionTitle",
   "searchHomeView", "seek", "settingsButton", "setupForm", "setupPanel", "status", "trackActionSheet", "trackArtist", "trackCount", "trackLabel",
-  "trackList", "trackTitle",
+  "trackList", "trackTitle", "trackAlbum", "trackAlbumSeparator",
+  "artistScreen", "artistBackButton", "artistTitle", "artistStatus", "artistTrackList", "artistAlbumList",
 ];
 const elements = Object.fromEntries(elementIds.map((id) => [id, document.getElementById(id)]));
 
@@ -178,18 +179,21 @@ function setHomeTab(tab) {
   });
   elements.mainScreen.scrollTo({ top: 0, behavior: "auto" });
   elements.collectionScreen.scrollTo({ top: 0, behavior: "auto" });
+  elements.artistScreen.scrollTo({ top: 0, behavior: "auto" });
 }
 function showView(view, collection = null) {
   state.currentView = view;
   state.currentCollection = collection;
   elements.mainScreen.hidden = view !== "home";
-  elements.collectionScreen.hidden = view === "home";
+  elements.collectionScreen.hidden = view !== "album" && view !== "playlist";
+  elements.artistScreen.hidden = view !== "artist";
   elements.homeTabs.hidden = view !== "home";
   elements.bottomBar.hidden = view !== "home";
   scheduleBottomBarPosition();
   document.body.classList.toggle("detail-open", view !== "home");
   elements.mainScreen.scrollTo({ top: 0, behavior: "auto" });
   elements.collectionScreen.scrollTo({ top: 0, behavior: "auto" });
+  elements.artistScreen.scrollTo({ top: 0, behavior: "auto" });
 }
 function setPlaybackButtonState(isPlaying) {
   const label = isPlaying ? "Пауза" : "Воспроизвести";
@@ -420,6 +424,27 @@ async function openAlbum(album) {
     if (!state.currentCollection.tracks?.length) elements.collectionTrackList.replaceChildren(Object.assign(document.createElement("div"), { className: "empty error", textContent: error.message }));
   }
 }
+let artistRequestId = 0;
+async function openArtist(artist) {
+  if (!artist?.name) return;
+  showPlayer(false);
+  showView("artist");
+  const requestId = ++artistRequestId;
+  elements.artistTitle.textContent = artist.name;
+  elements.artistStatus.textContent = "Загрузка…";
+  elements.artistTrackList.replaceChildren(); elements.artistAlbumList.replaceChildren();
+  try {
+    const data = await api(`/api/artists/${encodeURIComponent(artist.id || "by-name")}?name=${encodeURIComponent(artist.name)}`);
+    if (requestId !== artistRequestId || state.currentView !== "artist") return;
+    const tracks = data.result.tracks || []; const albums = data.result.albums || [];
+    elements.artistTrackList.replaceChildren(...tracks.map((track) => createTrackRow(track, tracks)));
+    elements.artistAlbumList.replaceChildren(...albums.map(createAlbumCard));
+    elements.artistStatus.textContent = tracks.length ? "" : "Треки этого исполнителя не найдены";
+    if (!albums.length) elements.artistAlbumList.textContent = "Альбомы не найдены";
+  } catch (error) {
+    if (requestId === artistRequestId && state.currentView === "artist") elements.artistStatus.textContent = error.message;
+  }
+}
 function openPlaylist(playlist) { showView("playlist", playlist); renderCollection(); }
 function shuffled(items) {
   const result = [...items];
@@ -497,7 +522,6 @@ function resumePlayback() {
   resumePromise = (async () => {
     try {
       try {
-        audio.load();
         await audio.play();
       } catch (error) {
         // Autoplay denial requires a user gesture; reloading cannot fix it.
@@ -546,7 +570,9 @@ async function playTrack(track, queue) {
   interruptedPlayback = false;
   state.playbackQueue = queue; state.currentTrackKey = trackKey(track); state.currentTrack = track; elements.audio.src = track.fileUrl;
   elements.seek.value = "0"; elements.miniProgress.style.width = "0%"; elements.trackLabel.textContent = "Сейчас играет";
-  elements.trackTitle.textContent = track.title; elements.trackArtist.textContent = track.artist; elements.miniTrackTitle.textContent = track.title; elements.miniTrackArtist.textContent = track.artist;
+  elements.trackTitle.textContent = track.title; elements.trackArtist.textContent = artistForTrack(track).name; elements.trackArtist.disabled = false;
+  elements.trackAlbum.textContent = track.album?.title || "";
+  elements.trackAlbum.hidden = elements.trackAlbumSeparator.hidden = !track.album?.id; elements.miniTrackTitle.textContent = track.title; elements.miniTrackArtist.textContent = track.artist;
   elements.miniPlayer.hidden = false; const artwork = artworkFor(track);
   elements.coverImage.hidden = !artwork; elements.coverFallback.hidden = Boolean(artwork); elements.miniCoverImage.hidden = !artwork; elements.miniCoverFallback.hidden = Boolean(artwork);
   if (artwork) { elements.coverImage.src = artwork; elements.miniCoverImage.src = artwork; }
@@ -580,6 +606,13 @@ elements.collectionPlayButton.addEventListener("click", () => { const tracks = s
 elements.collectionShuffleButton.addEventListener("click", () => { const tracks = shuffled(state.currentCollection?.tracks || []); if (tracks.length) playTrack(tracks[0], tracks); });
 elements.collectionMixButton.addEventListener("click", () => { if (state.currentView === "album") createAndOpenMix({ kind: "album", album: state.currentCollection }); });
 elements.openPlayerButton.addEventListener("click", () => showPlayer(true)); elements.closePlayerButton.addEventListener("click", () => showPlayer(false));
+elements.trackArtist.addEventListener("click", () => { if (state.currentTrack) void openArtist(artistForTrack(state.currentTrack)); });
+elements.trackAlbum.addEventListener("click", () => {
+  const album = albumFromTrack(state.currentTrack);
+  if (album) { showPlayer(false); void openAlbum(album); }
+});
+elements.collectionArtist.addEventListener("click", () => { if (state.currentCollection?.artist) void openArtist(state.currentCollection.artist); });
+elements.artistBackButton.addEventListener("click", () => showView("home"));
 elements.playerMixButton.addEventListener("click", () => { if (state.currentTrack) createAndOpenMix({ kind: "track", track: state.currentTrack }); });
 elements.miniMixButton.addEventListener("click", () => { if (state.currentTrack) createAndOpenMix({ kind: "track", track: state.currentTrack }); });
 elements.actionSheetMixButton.addEventListener("click", () => { if (state.actionTrack) createAndOpenMix({ kind: "track", track: state.actionTrack }); });

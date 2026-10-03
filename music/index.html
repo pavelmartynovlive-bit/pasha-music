@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Music" />
-  <link rel="stylesheet" href="../styles.css?v=46" />
+  <link rel="stylesheet" href="../styles.css?v=47" />
   <title>Pasha Music</title>
 </head>
 <body>
@@ -150,6 +150,21 @@
     <div class="track-list collection-track-list" id="collectionTrackList"></div>
   </main>
 
+  <main class="detail-screen artist-screen" id="artistScreen" hidden>
+    <header class="detail-topbar">
+      <button class="back-button" id="artistBackButton" type="button" aria-label="Назад">‹</button>
+      <span>Исполнитель</span><span></span>
+    </header>
+    <h1 class="artist-heading" id="artistTitle"></h1>
+    <p class="artist-status" id="artistStatus" role="status"></p>
+    <section><div class="section-title"><h2>Популярные треки</h2></div>
+      <div class="search-result-list artist-track-list" id="artistTrackList"></div>
+    </section>
+    <section class="artist-albums"><div class="section-title"><h2>Альбомы</h2></div>
+      <div class="album-grid" id="artistAlbumList"></div>
+    </section>
+  </main>
+
   <section class="mini-player" id="miniPlayer" aria-label="Сейчас играет" hidden>
     <button class="mini-player-open" id="openPlayerButton" type="button" aria-label="Открыть полноэкранный плеер">
       <span class="mini-art" id="miniArt"><img id="miniCoverImage" alt="" hidden /><span id="miniCoverFallback">♪</span></span>
@@ -179,7 +194,7 @@
       <div class="track-meta">
         <div class="track-label" id="trackLabel">Сейчас играет</div>
         <div class="track-title" id="trackTitle">Pasha Music</div>
-        <div class="track-artist" id="trackArtist">Выберите трек</div>
+        <div class="player-track-links"><button id="trackArtist" type="button" disabled>Выберите трек</button><span id="trackAlbumSeparator" aria-hidden="true" hidden>·</span><button id="trackAlbum" type="button" hidden></button></div>
       </div>
 
       <input class="seek" id="seek" type="range" min="0" max="100" value="0" step="0.1" aria-label="Позиция воспроизведения" />
@@ -213,6 +228,6 @@
       <button class="icon-button" id="settingsButton" type="button" aria-label="Настройки подключения"><svg class="bottom-bar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.5 3h5l.6 2.7 2.1 1.2 2.6-.8 2.5 4.3-2 1.9v2.4l2 1.9-2.5 4.3-2.6-.8-2.1 1.2-.6 2.7h-5l-.6-2.7-2.1-1.2-2.6.8-2.5-4.3 2-1.9v-2.4l-2-1.9L4.3 6l2.6.8L9 5.7Z" transform="translate(0 -1.5) scale(1 .95)"/><circle cx="12" cy="12" r="3"/></svg></button>
     </footer>
   <audio id="audio" preload="metadata" playsinline></audio>
-  <script type="module" src="./app.js?v=43"></script>
+  <script type="module" src="./app.js?v=44"></script>
 </body>
 </html>
