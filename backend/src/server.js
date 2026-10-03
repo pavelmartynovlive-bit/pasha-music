@@ -8,6 +8,7 @@ import { VKAudio } from "@toil/vk-audio";
 import { VKWebClient } from "@toil/vk-audio/client";
 import { getAudioItem } from "@toil/vk-audio/utils/index";
 import { fetchBusArrivals, formatVoiceArrivals } from "./bus.js";
+import { artistPhoto, artistPresentation, findArtistMetadata, getArtistPhoto } from "./artist.js";
 
 // @toil/vk-audio uses Error.isError(), which is unavailable in Node.js 18.
 // Keep the backend compatible with the VPS runtime until Node is upgraded.
@@ -553,7 +554,10 @@ app.get("/api/artists/:artistId", async (req, res) => {
   const name = String(req.query.name || "").trim();
   if (!name) return res.status(400).json({ ok: false, error: "Нужно имя исполнителя" });
   try {
-    const tracks = await withVkAudio(async (vk) => {
+    const { tracks, artist } = await withVkAudio(async (vk) => {
+      // Start the optional portrait lookup alongside the essential track request.
+      // Portrait errors and timeouts leave the track list available as usual.
+      const portrait = getArtistPhoto(vk, req.params.artistId, name);
       const response = await vk.request("audio.search", new URLSearchParams({
         q: name, performer_only: "1", sort: "2", count: "100", offset: "0",
       }));
@@ -562,7 +566,7 @@ app.get("/api/artists/:artistId", async (req, res) => {
       if (!Array.isArray(items)) throw new Error("VK не вернул треки исполнителя");
       const normalize = (value) => String(value || "").trim().toLocaleLowerCase();
       const seen = new Set();
-      return items.map(getAudioItem).filter((track) => {
+      const tracks = items.map(getAudioItem).filter((track) => {
         const matches = track.artists?.some((artist) =>
           req.params.artistId !== "by-name" && artist.id
             ? String(artist.id) === req.params.artistId
@@ -572,8 +576,13 @@ app.get("/api/artists/:artistId", async (req, res) => {
         if (!matches || seen.has(key)) return false;
         seen.add(key); return true;
       });
+      const metadata = findArtistMetadata(response.data?.response, req.params.artistId, name);
+      const id = req.params.artistId === "by-name" ? metadata?.id || "by-name" : req.params.artistId;
+      const photo = artistPhoto(metadata) || await (id !== req.params.artistId
+        ? getArtistPhoto(vk, id, name) : portrait);
+      return { tracks, artist: artistPresentation({ id, name, photo, tracks }) };
     });
-    res.json({ ok: true, result: { artist: { id: req.params.artistId, name }, tracks: tracks.slice(0, 20), albums: albumsFromTracks(tracks, 20) } });
+    res.json({ ok: true, result: { artist, tracks: tracks.slice(0, 20), albums: albumsFromTracks(tracks, 20) } });
   } catch (error) { sendVkError(res, error, "VK getArtist"); }
 });
 

@@ -24,7 +24,7 @@ const elementIds = [
   "searchResultList", "searchResults", "searchSuggestions", "searchTrackGroup", "sectionTabs", "sectionTitle",
   "searchHomeView", "seek", "settingsButton", "settingsScreen", "settingsStatus", "setupForm", "status", "trackActionSheet", "trackArtist", "trackCount", "trackLabel",
   "trackList", "trackTitle", "trackAlbum", "trackAlbumSeparator",
-  "artistScreen", "artistBackButton", "artistTitle", "artistStatus", "artistTrackList", "artistAlbumList",
+  "artistScreen", "artistBackButton", "artistTitle", "artistStatus", "artistTrackList", "artistAlbumList", "artistHero", "artistImage", "artistPlayButton",
 ];
 const elements = Object.fromEntries(elementIds.map((id) => [id, document.getElementById(id)]));
 
@@ -567,24 +567,63 @@ async function openAlbum(album, remember = true) {
   }
 }
 let artistRequestId = 0;
+function renderArtistArtwork(artist, albums = [], tracks = []) {
+  const requestId = artistRequestId;
+  const image = elements.artistImage;
+  const fallback = (artist.artworkKind === "album" && thumbnailUrl(artist.artwork || {})) ||
+    albums.map(albumArtwork).find(Boolean) || tracks.map(artworkFor).find(Boolean);
+  const source = artist.photo || thumbnailUrl(artist.artwork || {}) || fallback;
+  image.hidden = true;
+  image.onload = image.onerror = null;
+  image.removeAttribute("src");
+  elements.artistHero.dataset.artwork = "none";
+  const current = () => requestId === artistRequestId && state.currentView === "artist";
+  function load(url, kind) {
+    image.alt = kind === "artist" ? `Фото ${artist.name}` : `Обложка релиза ${artist.name}`;
+    image.onload = () => {
+      if (!current()) return;
+      image.hidden = false;
+      elements.artistHero.dataset.artwork = kind;
+    };
+    image.onerror = () => {
+      if (!current()) return;
+      if (fallback && url !== fallback) load(fallback, "album");
+      else { image.hidden = true; elements.artistHero.dataset.artwork = "none"; }
+    };
+    image.src = url;
+  }
+  if (source) load(source, artist.photo || artist.artworkKind === "artist" ? "artist" : "album");
+}
 async function openArtist(artist, remember = true) {
   if (!artist?.name) return;
   showView("artist", null, remember);
-  state.currentArtist = artist;
+  state.currentArtist = { ...artist, tracks: [] };
   const requestId = ++artistRequestId;
   elements.artistTitle.textContent = artist.name;
+  elements.artistPlayButton.disabled = true;
+  elements.artistPlayButton.setAttribute("aria-label", `Слушать ${artist.name}`);
+  renderArtistArtwork(artist);
   elements.artistStatus.textContent = "Загрузка…";
+  elements.artistStatus.classList.remove("error");
   elements.artistTrackList.replaceChildren(); elements.artistAlbumList.replaceChildren();
   try {
     const data = await api(`/api/artists/${encodeURIComponent(artist.id || "by-name")}?name=${encodeURIComponent(artist.name)}`);
     if (requestId !== artistRequestId || state.currentView !== "artist") return;
     const tracks = data.result.tracks || []; const albums = data.result.albums || [];
+    state.currentArtist = { ...artist, ...data.result.artist, tracks };
+    elements.artistTitle.textContent = state.currentArtist.name;
+    elements.artistPlayButton.disabled = !tracks.length;
+    elements.artistPlayButton.setAttribute("aria-label", `Слушать ${state.currentArtist.name}`);
+    renderArtistArtwork(state.currentArtist, albums, tracks);
     elements.artistTrackList.replaceChildren(...tracks.map((track) => createTrackRow(track, tracks)));
     elements.artistAlbumList.replaceChildren(...albums.map(createAlbumCard));
     elements.artistStatus.textContent = tracks.length ? "" : "Треки этого исполнителя не найдены";
     if (!albums.length) elements.artistAlbumList.textContent = "Альбомы не найдены";
   } catch (error) {
-    if (requestId === artistRequestId && state.currentView === "artist") elements.artistStatus.textContent = error.message;
+    if (requestId === artistRequestId && state.currentView === "artist") {
+      elements.artistStatus.textContent = error.message;
+      elements.artistStatus.classList.add("error");
+    }
   }
 }
 function openPlaylist(playlist) { showView("playlist", playlist); renderCollection(); }
@@ -825,6 +864,10 @@ elements.trackAlbum.addEventListener("click", () => {
 });
 elements.collectionArtist.addEventListener("click", () => { if (state.currentCollection?.artist) void openArtist(state.currentCollection.artist); });
 elements.artistBackButton.addEventListener("click", () => { void goBack(); });
+elements.artistPlayButton.addEventListener("click", () => {
+  const tracks = state.currentArtist?.tracks || [];
+  if (tracks.length) void playTrack(tracks[0], tracks);
+});
 elements.playerMixButton.addEventListener("click", () => { if (state.currentTrack) createAndOpenMix({ kind: "track", track: state.currentTrack }); });
 elements.miniMixButton.addEventListener("click", () => { if (state.currentTrack) createAndOpenMix({ kind: "track", track: state.currentTrack }); });
 elements.actionSheetMixButton.addEventListener("click", () => { if (state.actionTrack) createAndOpenMix({ kind: "track", track: state.actionTrack }); });
