@@ -82,8 +82,8 @@ function saveLibrary() { localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringif
 function showSetup(show = true) { elements.setupPanel.hidden = !show; if (show) elements.backendUrlInput.focus(); }
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
   (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-document.documentElement.classList.toggle("is-standalone",
-  window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true);
+const isStandalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+document.documentElement.classList.toggle("is-standalone", isStandalone);
 
 let searchFocusGuard = null;
 let searchFocusTimer = 0;
@@ -152,6 +152,36 @@ window.addEventListener("pagehide", finishSearchFocus);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) { finishSearchFocus(); searchActivatedByGesture = false; }
 });
+
+let bottomInsetTimer = 0;
+function calibrateBottomInset() {
+  if (!isIOS || !isStandalone || document.hidden) return;
+  const viewport = window.visualViewport;
+  if (!viewport || viewport.scale !== 1 || viewport.height <= 0) return;
+  if (searchFocusGuard) { scheduleBottomInset(); return; }
+  const deficit = Math.max(0, document.body.clientHeight - viewport.height);
+  // iOS standalone can clip a status-bar-sized strip below the visual viewport
+  // (WebKit 313800). Keep that clearance, but never measure the open keyboard.
+  if (deficit >= 120) return;
+  const value = `${Math.ceil(deficit)}px`;
+  if (document.documentElement.style.getPropertyValue("--viewport-bottom-inset") !== value) {
+    document.documentElement.style.setProperty("--viewport-bottom-inset", value);
+  }
+}
+function scheduleBottomInset() {
+  clearTimeout(bottomInsetTimer);
+  bottomInsetTimer = setTimeout(calibrateBottomInset, 400);
+}
+window.visualViewport?.addEventListener("resize", scheduleBottomInset);
+window.addEventListener("resize", scheduleBottomInset);
+window.addEventListener("pageshow", scheduleBottomInset);
+window.addEventListener("pagehide", () => clearTimeout(bottomInsetTimer));
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) clearTimeout(bottomInsetTimer);
+  else scheduleBottomInset();
+});
+calibrateBottomInset();
+
 function normalizeBackendUrl(value) {
   const url = new URL(value.trim());
   const isLocal = ["localhost", "127.0.0.1"].includes(url.hostname);
