@@ -42,7 +42,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Music" />
-  <link rel="stylesheet" href="../styles.css?v=61" />
+  <link rel="stylesheet" href="../styles.css?v=62" />
   <link rel="stylesheet" href="./artist.css?v=1" />
   <title>Pasha Music</title>
 </head>
@@ -168,6 +168,8 @@
       </form>
       <p class="settings-status" id="settingsStatus" role="status" hidden></p>
       <p class="setup-note">Ключ доступа сохраняется только на этом устройстве.</p>
+      <button class="playback-diagnostics-button" id="playbackDiagnosticsButton" type="button">Скопировать диагностику плеера</button>
+      <p class="setup-note" id="playbackDiagnosticsStatus" role="status" hidden></p>
     </section>
   </main>
 
@@ -286,6 +288,6 @@
       <button class="icon-button" id="settingsButton" type="button" aria-label="Настройки подключения"><svg class="bottom-bar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.5 3h5l.6 2.7 2.1 1.2 2.6-.8 2.5 4.3-2 1.9v2.4l2 1.9-2.5 4.3-2.6-.8-2.1 1.2-.6 2.7h-5l-.6-2.7-2.1-1.2-2.6.8-2.5-4.3 2-1.9v-2.4l-2-1.9L4.3 6l2.6.8L9 5.7Z" transform="translate(0 -1.5) scale(1 .95)"/><circle cx="12" cy="12" r="3"/></svg></button>
     </footer>
   <audio id="audio" preload="metadata" playsinline></audio>
-  <script type="module" src="./app.js?v=58"></script>
+  <script type="module" src="./app.js?v=59"></script>
 </body>
 </html>

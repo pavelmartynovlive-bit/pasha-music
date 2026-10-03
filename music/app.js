@@ -23,7 +23,7 @@ const elementIds = [
   "playerMixButton", "playerLikeButton", "playerLikeLabel", "playerLibraryStatus", "libraryTracksSection", "previousButton", "searchAlbumGroup", "searchAlbumList", "searchForm", "searchInput", "searchFocusPreview",
   "searchResultList", "searchResults", "searchSuggestions", "searchTrackGroup", "sectionTabs", "sectionTitle",
   "searchHomeView", "seek", "settingsButton", "settingsScreen", "settingsStatus", "setupForm", "status", "trackActionSheet", "trackArtist", "trackCount", "trackLabel",
-  "trackList", "trackTitle", "trackAlbum", "trackAlbumSeparator",
+  "trackList", "trackTitle", "trackAlbum", "trackAlbumSeparator", "playbackDiagnosticsButton", "playbackDiagnosticsStatus",
   "artistScreen", "artistBackButton", "artistTitle", "artistStatus", "artistTrackList", "artistAlbumList", "artistHero", "artistImage", "artistPlayButton",
 ];
 const elements = Object.fromEntries(elementIds.map((id) => [id, document.getElementById(id)]));
@@ -353,7 +353,7 @@ async function goBack() {
     });
   });
 }
-function setPlaybackButtonState(isPlaying) {
+function setPlaybackButtonState(isPlaying, publishMediaState = true) {
   const label = isPlaying ? "Пауза" : "Воспроизвести";
   elements.playButton.querySelector(".player-play-icon").toggleAttribute("hidden", isPlaying);
   elements.playButton.querySelector(".player-pause-icon").toggleAttribute("hidden", !isPlaying);
@@ -361,7 +361,7 @@ function setPlaybackButtonState(isPlaying) {
   elements.miniPlayButton.querySelector(".mini-pause-icon").toggleAttribute("hidden", !isPlaying);
   elements.playButton.setAttribute("aria-label", label); elements.miniPlayButton.setAttribute("aria-label", label);
   catMascot.isPlaying = isPlaying;
-  if ("mediaSession" in navigator) navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+  if (publishMediaState && "mediaSession" in navigator) navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
 }
 function normalizeSearchText(value) {
   return value.toLocaleLowerCase("ru").split("").map((letter) => CYRILLIC_TO_LATIN[letter] ?? letter).join("").replace(/[^a-z0-9]+/g, "");
@@ -738,6 +738,23 @@ let outputNeedsReset = false;
 let resumePromise = null;
 let resumeAttempt = 0;
 let savedPlaybackPosition = 0;
+let interruptionPosition = null;
+let recoveryController = null;
+let pendingMediaPause = null;
+let recentMediaPause = null;
+let mediaPauseTimer = 0;
+let playbackWatchdog = 0;
+let watchdogRepairs = 0;
+let pendingAudioReplacement = null;
+let foregroundRepairPending = false;
+const playbackEvents = [];
+
+function recordPlaybackEvent(event, detail = "") {
+  playbackEvents.push({ time: Date.now(), event, detail, session: navigator.audioSession?.state || "unsupported", wanted: playbackWanted, interrupted: interruptedPlayback, position: Math.round((elements.audio.currentTime || 0) * 100) / 100, checkpoint: interruptionPosition ?? savedPlaybackPosition, paused: elements.audio.paused, readyState: elements.audio.readyState, muted: elements.audio.muted, volume: elements.audio.volume });
+  if (playbackEvents.length > 80) playbackEvents.shift();
+}
+// No keys, URLs or track metadata: useful for diagnosing native event ordering.
+window.getMusicPlaybackDiagnostics = () => JSON.stringify({ userAgent: navigator.userAgent, events: playbackEvents }, null, 2);
 
 function configureAudioSession(reset = false) {
   try {
@@ -748,136 +765,392 @@ function configureAudioSession(reset = false) {
 }
 configureAudioSession();
 
-function markPlaybackInterrupted() {
+function cancelPlaybackAttempt() {
+  resumeAttempt += 1;
+  recoveryController?.abort();
+  recoveryController = null;
+  resumePromise = null;
+  clearTimeout(playbackWatchdog);
+  rollbackAudioReplacement();
+}
+function rollbackAudioReplacement() {
+  const replacement = pendingAudioReplacement;
+  if (!replacement) return;
+  pendingAudioReplacement = null;
+  if (elements.audio === replacement.audio) elements.audio = replacement.backup;
+  replacement.backup.id = "audio";
+  replacement.audio.pause(); replacement.audio.removeAttribute("src"); replacement.audio.load(); replacement.audio.remove();
+}
+function clearPendingMediaPause() {
+  clearTimeout(mediaPauseTimer);
+  pendingMediaPause = null;
+}
+function playbackPosition() {
+  return interruptionPosition ?? (Number.isFinite(elements.audio.currentTime) ? elements.audio.currentTime : savedPlaybackPosition);
+}
+function markPlaybackInterrupted(position = playbackPosition()) {
   if (!playbackWanted || !state.currentTrack) return;
+  if (interruptionPosition === null) {
+    interruptionPosition = Math.max(0, position || savedPlaybackPosition);
+    savedPlaybackPosition = interruptionPosition;
+    recordPlaybackEvent("interruption");
+  }
+  clearPendingMediaPause();
   interruptedPlayback = true;
   outputNeedsReset = true;
-  if (elements.audio.currentTime > 0) savedPlaybackPosition = elements.audio.currentTime;
-  // A suspended play() promise must not block recovery when the session returns.
-  resumeAttempt += 1;
-  resumePromise = null;
-  setPlaybackButtonState(false);
+  cancelPlaybackAttempt();
+  // Do not pause/load or publish MediaSession.paused here. WebKit records the
+  // state to restore during capture; changing it can disable native auto-resume.
+  setPlaybackButtonState(false, false);
+  updateMediaPosition();
 }
-
 function pausePlayback() {
+  recordPlaybackEvent("manual-pause");
   playbackWanted = false;
   interruptedPlayback = false;
-  resumeAttempt += 1;
-  resumePromise = null;
+  recentMediaPause = null;
+  clearPendingMediaPause();
+  cancelPlaybackAttempt();
   elements.audio.pause();
+  setPlaybackButtonState(false);
+  updateMediaPosition();
 }
-
-function playWithTimeout(audio) {
-  let timer;
-  return Promise.race([
-    audio.play(),
-    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Playback timed out")), 8000); }),
-  ]).finally(() => clearTimeout(timer));
-}
-
-async function reloadPlayback(source, position, isCurrent) {
-  const audio = elements.audio;
-  const restorePosition = () => {
-    if (isCurrent() && position > 0) {
-      audio.currentTime = Number.isFinite(audio.duration) ? Math.min(position, audio.duration) : position;
+function handleMediaPause() {
+  recordPlaybackEvent("system-pause");
+  if (!playbackWanted) return;
+  if (navigator.audioSession?.state === "interrupted") {
+    markPlaybackInterrupted();
+    return;
+  }
+  // WebKit sends the same action for a microphone interruption and a remote
+  // user Pause. AudioSession.state is updated on a later task, not synchronously.
+  if (!pendingMediaPause) pendingMediaPause = { track: state.currentTrack, position: playbackPosition(), wanted: playbackWanted, started: performance.now(), rearmed: false };
+  recentMediaPause = pendingMediaPause;
+  setPlaybackButtonState(false, false);
+  clearTimeout(mediaPauseTimer);
+  pendingMediaPause.deadline = performance.now() + 250;
+  const settlePause = () => {
+    const pending = pendingMediaPause;
+    if (!pending || pending.track !== state.currentTrack) return;
+    // A suspended process can deliver this timer before queued AudioSession
+    // events after a long voice recording. Give those events one fresh turn;
+    // elapsed wall time while suspended is not evidence of a manual Pause.
+    if (!pending.rearmed && performance.now() - pending.deadline > 500) {
+      pending.rearmed = true;
+      pending.deadline = performance.now() + 250;
+      mediaPauseTimer = setTimeout(settlePause, 250);
+      return;
+    }
+    if (navigator.audioSession?.state === "interrupted") markPlaybackInterrupted(pending.position);
+    else {
+      pausePlayback();
+      // Keep a short-lived checkpoint if the native statechange arrives late.
+      recentMediaPause = pending;
     }
   };
-  audio.addEventListener("loadedmetadata", restorePosition, { once: true });
-  try {
-    audio.pause();
-    configureAudioSession(true);
-    audio.src = source;
-    audio.load();
-    await playWithTimeout(audio);
-  } finally { audio.removeEventListener("loadedmetadata", restorePosition); }
+  mediaPauseTimer = setTimeout(settlePause, 250);
 }
 
-function resumePlayback(force = false) {
-  playbackWanted = true;
-  if (resumePromise && !force) return resumePromise;
+function playWithTimeout(audio, signal) {
+  let timer;
+  let abort;
+  const cancelled = new Promise((_, reject) => {
+    abort = () => reject(new DOMException("Playback cancelled", "AbortError"));
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+  });
+  return Promise.race([
+    audio.play(),
+    cancelled,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Playback timed out")), 8000); }),
+  ]).finally(() => { clearTimeout(timer); signal?.removeEventListener("abort", abort); });
+}
+function waitForAudio(audio, events, ready, signal) {
+  return new Promise((resolve, reject) => {
+    let timer;
+    const clean = () => { clearTimeout(timer); events.forEach((event) => audio.removeEventListener(event, check)); audio.removeEventListener("error", fail); signal.removeEventListener("abort", abort); };
+    const check = () => { if (ready()) { clean(); resolve(); } };
+    const fail = () => { clean(); reject(new Error("Audio decoder failed")); };
+    const abort = () => { clean(); reject(new DOMException("Playback cancelled", "AbortError")); };
+    events.forEach((event) => audio.addEventListener(event, check));
+    audio.addEventListener("error", fail, { once: true });
+    signal.addEventListener("abort", abort, { once: true });
+    timer = setTimeout(() => { clean(); reject(new Error("Audio readiness timed out")); }, 8000);
+    if (signal.aborted) abort(); else check();
+  });
+}
+async function reloadPlayback(source, position, isCurrent, signal, fresh = false) {
+  let audio = elements.audio;
+  let oldAudio = null;
+  const loadController = new AbortController();
+  const abort = () => loadController.abort();
+  signal.addEventListener("abort", abort, { once: true });
+  if (signal.aborted) abort();
+  if (fresh) {
+    oldAudio = audio;
+    oldAudio.pause();
+    audio = audio.cloneNode(false);
+    audio.removeAttribute("src");
+    oldAudio.id = "audio-recovery-backup";
+    audio.id = "audio";
+    // Preserve the old, unlocked element until the replacement actually starts.
+    oldAudio.after(audio);
+    elements.audio = audio;
+    pendingAudioReplacement = { audio, backup: oldAudio };
+    bindAudioEvents(audio);
+  }
+  audio.pause();
+  audio.muted = false;
+  audio.volume = 1;
+  configureAudioSession(true);
+  // Both listeners must survive an early play() promise resolution.
+  let actuallyPlaying = false;
+  const onPlaying = () => { actuallyPlaying = true; };
+  audio.addEventListener("playing", onPlaying);
+  audio.src = source;
+  audio.load();
+  const metadata = waitForAudio(audio, ["loadedmetadata", "durationchange"], () => audio.readyState >= 1, loadController.signal);
+  const playing = waitForAudio(audio, ["playing"], () => actuallyPlaying, loadController.signal);
+  // Invoke play inside the system/user callback, before any await or network I/O.
+  const started = playWithTimeout(audio, loadController.signal);
+  const positioned = metadata.then(async () => {
+    if (!isCurrent() || elements.audio !== audio) throw new DOMException("Playback cancelled", "AbortError");
+    if (position > 0) {
+      const target = Number.isFinite(audio.duration) ? Math.min(position, Math.max(0, audio.duration - .05)) : position;
+      audio.currentTime = target;
+      await waitForAudio(audio, ["seeked", "timeupdate"], () => !audio.seeking && Math.abs(audio.currentTime - target) < 1, loadController.signal);
+    }
+  });
+  try {
+    await Promise.all([started, playing, positioned]);
+    if (!isCurrent()) throw new DOMException("Playback cancelled", "AbortError");
+    if (oldAudio) {
+      pendingAudioReplacement = null;
+      oldAudio.pause(); oldAudio.removeAttribute("src"); oldAudio.load(); oldAudio.remove();
+      audio.id = "audio";
+      recordPlaybackEvent("decoder-replaced");
+    }
+  } catch (error) {
+    // Observe every pending rejection, including promises invalidated by load().
+    if (oldAudio) {
+      // Cancellation rolls back synchronously before Next/Pause can change src.
+      // A late rejection must never destroy an element owned by a newer command.
+      if (pendingAudioReplacement?.audio === audio) rollbackAudioReplacement();
+    }
+    throw error;
+  } finally {
+    audio.removeEventListener("playing", onPlaying);
+    signal.removeEventListener("abort", abort);
+    loadController.abort();
+  }
+}
+function schedulePlaybackWatchdog() {
+  clearTimeout(playbackWatchdog);
+  if (!playbackWanted || navigator.audioSession?.state === "interrupted") return;
   const audio = elements.audio;
-  if (!audio.getAttribute("src")) return Promise.resolve(false);
+  const start = audio.currentTime;
+  const attempt = resumeAttempt;
+  playbackWatchdog = setTimeout(() => {
+    if (audio !== elements.audio || attempt !== resumeAttempt || !playbackWanted || interruptedPlayback || audio.ended || audio.seeking || audio.paused || audio.readyState < 3) return;
+    if (audio.currentTime > start + .05) { watchdogRepairs = 0; return; }
+    if (watchdogRepairs >= 1) {
+      markPlaybackInterrupted(start);
+      setPlaybackButtonState(false);
+      recordPlaybackEvent("decoder-still-stalled");
+      setStatus("Аудиовывод не возобновился. Нажмите Play в системном плеере.", true);
+      return;
+    }
+    watchdogRepairs += 1;
+    recordPlaybackEvent("decoder-stalled");
+    markPlaybackInterrupted(start);
+    void resumePlayback(true, true);
+  }, 1500);
+}
+
+function resumePlayback(force = false, fresh = false) {
+  playbackWanted = true;
+  clearPendingMediaPause();
+  recentMediaPause = null;
+  if (navigator.audioSession?.state === "interrupted") {
+    markPlaybackInterrupted();
+    recordPlaybackEvent("resume-deferred-for-capture");
+    return Promise.resolve(false);
+  }
+  // Native Play, AudioSession and foreground notifications can arrive together.
+  if (resumePromise) return resumePromise;
+  const audio = elements.audio;
+  const source = audio.getAttribute("src");
+  if (!source || !state.currentTrack) return Promise.resolve(false);
   const attempt = ++resumeAttempt;
   const track = state.currentTrack;
-  const source = audio.getAttribute("src");
-  // A silent decoder can keep advancing while the microphone owns the output.
-  const position = outputNeedsReset ? savedPlaybackPosition : Math.max(audio.currentTime || 0, savedPlaybackPosition);
-  const isCurrent = () => attempt === resumeAttempt && playbackWanted && state.currentTrack === track;
-  // System Play must also repair paused=false when iOS lost the interruption event.
-  const resetOutput = outputNeedsReset || navigator.audioSession?.state === "interrupted" || (force && !audio.paused);
+  const position = outputNeedsReset ? savedPlaybackPosition : playbackPosition();
+  const controller = new AbortController();
+  recoveryController = controller;
+  const isCurrent = () => attempt === resumeAttempt && playbackWanted && state.currentTrack === track && !controller.signal.aborted;
+  const resetOutput = force || outputNeedsReset;
+  if (resetOutput) {
+    // A replacement may have currentTime=0 until metadata arrives. Never let
+    // Pause/cancellation overwrite the position captured before its creation.
+    interruptionPosition ??= position;
+    savedPlaybackPosition = interruptionPosition;
+    outputNeedsReset = true;
+  }
   let resolveResume;
   const promise = new Promise((resolve) => { resolveResume = resolve; });
   resumePromise = promise;
+  recordPlaybackEvent("resume", resetOutput ? "repair" : "play");
   void (async () => {
     try {
       try {
-        if (resetOutput) await reloadPlayback(source, position, isCurrent);
-        else { configureAudioSession(); await playWithTimeout(audio); }
+        if (resetOutput) await reloadPlayback(source, position, isCurrent, controller.signal, fresh);
+        else { configureAudioSession(); await playWithTimeout(audio, controller.signal); }
       } catch (error) {
         if (!isCurrent()) return false;
-        // A denied autoplay still needs an explicit user/system Play command.
-        if (error.name === "NotAllowedError") throw error;
+        if (error.name === "NotAllowedError" || navigator.audioSession?.state === "interrupted") throw error;
+        // One fresh decoder attempt. Refresh a rejected/expired source first;
+        // an otherwise stalled decoder does not need another backend request.
         let refreshedSource = source;
-        if (track) {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 10000);
+        if (error.name === "NotSupportedError" || elements.audio.error) {
+          const requestController = new AbortController();
+          const cancelRequest = () => requestController.abort();
+          controller.signal.addEventListener("abort", cancelRequest, { once: true });
+          const timer = setTimeout(() => requestController.abort(), 10000);
           let data;
-          try {
-            data = await api(`/api/tracks/${encodeURIComponent(track.ownerId)}/${encodeURIComponent(track.id)}`, controller.signal);
-          } finally { clearTimeout(timer); }
+          try { data = await api(`/api/tracks/${encodeURIComponent(track.ownerId)}/${encodeURIComponent(track.id)}`, requestController.signal); }
+          finally { clearTimeout(timer); controller.signal.removeEventListener("abort", cancelRequest); }
           if (!isCurrent()) return false;
           if (!data.result.track?.fileUrl) throw new Error("Нет ссылки на трек");
           refreshedSource = data.result.track.fileUrl;
           track.fileUrl = refreshedSource;
         }
-        await reloadPlayback(refreshedSource, position, isCurrent);
+        if (fresh) throw error;
+        await reloadPlayback(refreshedSource, position, isCurrent, controller.signal, true);
       }
       if (!isCurrent()) return false;
-      if (audio.paused || navigator.audioSession?.state === "interrupted") {
-        interruptedPlayback = true;
-        outputNeedsReset = true;
-        setPlaybackButtonState(false);
-        return false;
-      }
+      if (elements.audio.paused || navigator.audioSession?.state === "interrupted") throw new Error("Audio session is not ready");
       interruptedPlayback = false;
       outputNeedsReset = false;
+      interruptionPosition = null;
       setPlaybackButtonState(true);
+      updateMediaPosition();
+      schedulePlaybackWatchdog();
+      recordPlaybackEvent("resumed");
       return true;
-    } catch {
+    } catch (error) {
       if (isCurrent()) {
         interruptedPlayback = true;
         outputNeedsReset = true;
-        setPlaybackButtonState(false);
-        setStatus("Не удалось продолжить воспроизведение. Нажмите Play ещё раз.", true);
+        interruptionPosition ??= position;
+        savedPlaybackPosition = interruptionPosition;
+        setPlaybackButtonState(false, navigator.audioSession?.state !== "interrupted");
+        recordPlaybackEvent("resume-failed", error.name || "Error");
+        setStatus(error.name === "NotAllowedError" ? "iOS не разрешила автопродолжение. Нажмите Play в системном плеере." : "Не удалось продолжить воспроизведение. Нажмите Play ещё раз.", true);
       }
       return false;
-    } finally { if (attempt === resumeAttempt) resumePromise = null; }
+    } finally {
+      if (attempt === resumeAttempt) { resumePromise = null; recoveryController = null; }
+    }
   })().then(resolveResume);
   return promise;
 }
-
 function resumeAfterInterruption(allowBackground = false) {
-  if ((!document.hidden || allowBackground === true) && interruptedPlayback && playbackWanted && (!elements.audio.ended || outputNeedsReset) && navigator.audioSession?.state !== "interrupted") {
-    void resumePlayback();
-  }
+  if ((!document.hidden || allowBackground === true) && interruptedPlayback && playbackWanted && navigator.audioSession?.state !== "interrupted") void resumePlayback();
+  else if (!document.hidden && playbackWanted && !pendingMediaPause && !resumePromise) schedulePlaybackWatchdog();
 }
-document.addEventListener("visibilitychange", resumeAfterInterruption);
-window.addEventListener("pageshow", resumeAfterInterruption);
-window.addEventListener("focus", resumeAfterInterruption);
+function onPlaybackForeground() {
+  if (document.hidden) {
+    foregroundRepairPending = playbackWanted;
+    return;
+  }
+  const returnedWhilePlaying = foregroundRepairPending;
+  foregroundRepairPending = false;
+  // Let a queued AudioSession statechange run before deciding a remote Pause.
+  if (pendingMediaPause) handleMediaPause();
+  if (returnedWhilePlaying && playbackWanted && !pendingMediaPause && !resumePromise && !interruptedPlayback) {
+    // Ducking in another app may produce no web event at all. One repair on
+    // return reacquires the output without guessing when that capture began or
+    // rewinding music that played normally while the app was in the background.
+    recordPlaybackEvent("foreground-output-repair");
+    void resumePlayback(true);
+  } else resumeAfterInterruption();
+}
+document.addEventListener("visibilitychange", onPlaybackForeground);
+window.addEventListener("pageshow", onPlaybackForeground);
+window.addEventListener("focus", onPlaybackForeground);
 let previousAudioSessionState = navigator.audioSession?.state;
 navigator.audioSession?.addEventListener("statechange", () => {
   const sessionState = navigator.audioSession.state;
   const wasInterrupted = previousAudioSessionState === "interrupted";
   previousAudioSessionState = sessionState;
-  if (sessionState === "interrupted") markPlaybackInterrupted();
-  else if (sessionState === "active" || wasInterrupted) resumeAfterInterruption(true);
+  recordPlaybackEvent("session-state", sessionState);
+  if (sessionState === "interrupted") {
+    const pending = pendingMediaPause || recentMediaPause;
+    if (!playbackWanted && pending?.wanted && pending.track === state.currentTrack && performance.now() - pending.started < 1500) playbackWanted = true;
+    markPlaybackInterrupted(pending?.position);
+    recentMediaPause = null;
+  } else if (wasInterrupted) resumeAfterInterruption(true);
 });
+function updateMediaPosition() {
+  const audio = elements.audio;
+  if (!navigator.mediaSession?.setPositionState || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+  try { navigator.mediaSession.setPositionState({ duration: audio.duration, playbackRate: audio.playbackRate || 1, position: Math.min(audio.duration, Math.max(0, outputNeedsReset ? savedPlaybackPosition : audio.currentTime || 0)) }); } catch { /* Unsupported position reporting on older Safari. */ }
+}
+function seekPlayback(position) {
+  let audio = elements.audio;
+  if (!Number.isFinite(position)) return;
+  const target = Math.max(0, Number.isFinite(audio.duration) ? Math.min(position, audio.duration) : position);
+  const wasRecovering = Boolean(resumePromise);
+  if (wasRecovering) { cancelPlaybackAttempt(); audio = elements.audio; }
+  savedPlaybackPosition = target;
+  if (interruptionPosition !== null) interruptionPosition = target;
+  if (pendingMediaPause) pendingMediaPause.position = target;
+  if (audio.readyState >= 1) audio.currentTime = target;
+  updateMediaPosition();
+  if (wasRecovering && playbackWanted && navigator.audioSession?.state !== "interrupted") void resumePlayback();
+}
+function bindAudioEvents(audio) {
+  const current = () => elements.audio === audio;
+  audio.addEventListener("playing", () => {
+    if (!current()) return;
+    recordPlaybackEvent("audio-playing");
+    if (!playbackWanted) { audio.pause(); return; }
+    if (resumePromise || pendingMediaPause || navigator.audioSession?.state === "interrupted") return;
+    if (outputNeedsReset) { void resumePlayback(); return; }
+    setPlaybackButtonState(true); schedulePlaybackWatchdog();
+  });
+  audio.addEventListener("pause", () => {
+    if (!current()) return;
+    recordPlaybackEvent("audio-pause");
+    if (playbackWanted && !audio.ended && !resumePromise && !pendingMediaPause) markPlaybackInterrupted();
+    setPlaybackButtonState(false, !playbackWanted);
+  });
+  audio.addEventListener("timeupdate", () => {
+    if (!current()) return;
+    const { duration } = audio;
+    const currentTime = outputNeedsReset ? savedPlaybackPosition : audio.currentTime;
+    if (!outputNeedsReset && !pendingMediaPause && Number.isFinite(currentTime) && currentTime > 0) savedPlaybackPosition = currentTime;
+    elements.currentTime.textContent = formatTime(currentTime); elements.duration.textContent = formatTime(duration);
+    const progress = Number.isFinite(duration) && duration > 0 ? (currentTime / duration) * 100 : 0;
+    elements.seek.value = String(progress); elements.miniProgress.style.width = `${progress}%`;
+    updateMediaPosition();
+  });
+  audio.addEventListener("loadedmetadata", updateMediaPosition);
+  audio.addEventListener("seeked", updateMediaPosition);
+  audio.addEventListener("ended", () => { if (current() && playbackWanted && !outputNeedsReset && !resumePromise) moveTrack(1); });
+  audio.addEventListener("error", () => {
+    if (!current() || resumePromise) return;
+    setPlaybackButtonState(false, false);
+    if (playbackWanted) { markPlaybackInterrupted(); if (navigator.audioSession?.state !== "interrupted") void resumePlayback(); }
+  });
+}
+bindAudioEvents(elements.audio);
 
 async function playTrack(track, queue) {
   if (!track?.fileUrl) return setStatus("У этого трека нет ссылки для воспроизведения", true);
   interruptedPlayback = false;
   outputNeedsReset = false;
-  resumeAttempt += 1; resumePromise = null; savedPlaybackPosition = 0;
+  clearPendingMediaPause(); recentMediaPause = null; cancelPlaybackAttempt();
+  savedPlaybackPosition = 0; interruptionPosition = null; watchdogRepairs = 0;
   state.playbackQueue = queue; state.currentTrackKey = trackKey(track); state.currentTrack = track; elements.audio.src = track.fileUrl;
   elements.seek.value = "0"; elements.miniProgress.style.width = "0%"; elements.trackLabel.textContent = "Сейчас играет";
   elements.trackTitle.textContent = track.title; elements.trackArtist.textContent = artistForTrack(track).name; elements.trackArtist.disabled = false;
@@ -911,6 +1184,15 @@ elements.setupForm.addEventListener("submit", async (event) => {
   finally { submitButton.disabled = false; }
 });
 elements.settingsButton.addEventListener("click", openSettings);
+elements.playbackDiagnosticsButton.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(window.getMusicPlaybackDiagnostics());
+    elements.playbackDiagnosticsStatus.textContent = "Диагностика скопирована. Ключ доступа и ссылки на треки в неё не входят.";
+  } catch {
+    elements.playbackDiagnosticsStatus.textContent = "Не удалось скопировать диагностику. Попробуйте ещё раз.";
+  }
+  elements.playbackDiagnosticsStatus.hidden = false;
+});
 elements.closeSetupButton.addEventListener("click", () => { void goBack(); });
 elements.homeTabs.addEventListener("click", (event) => { const button = event.target.closest("[data-home-tab]"); if (button) { setHomeTab(button.dataset.homeTab); if (state.homeTab === "search") focusSearchInput(true); } });
 elements.searchForm.addEventListener("submit", (event) => { event.preventDefault(); searchMusic(elements.searchInput.value); elements.searchInput.blur(); });
@@ -981,34 +1263,24 @@ elements.miniPlayButton.addEventListener("click", () => { if (elements.audio.pau
 elements.previousButton.addEventListener("click", () => moveTrack(-1)); elements.nextButton.addEventListener("click", () => moveTrack(1)); elements.miniNextButton.addEventListener("click", () => moveTrack(1));
 elements.seek.addEventListener("input", () => {
   if (Number.isFinite(elements.audio.duration)) {
-    savedPlaybackPosition = (Number(elements.seek.value) / 100) * elements.audio.duration;
-    elements.audio.currentTime = savedPlaybackPosition;
+    seekPlayback((Number(elements.seek.value) / 100) * elements.audio.duration);
   }
 });
-elements.audio.addEventListener("playing", () => {
-  if (playbackWanted && !outputNeedsReset && navigator.audioSession?.state !== "interrupted") setPlaybackButtonState(true);
-});
-elements.audio.addEventListener("pause", () => {
-  if (playbackWanted && !elements.audio.ended && !resumePromise) markPlaybackInterrupted();
-  setPlaybackButtonState(false);
-});
-elements.audio.addEventListener("timeupdate", () => {
-  const { duration } = elements.audio;
-  const currentTime = outputNeedsReset ? savedPlaybackPosition : elements.audio.currentTime;
-  if (!outputNeedsReset && Number.isFinite(currentTime) && currentTime > 0) savedPlaybackPosition = currentTime;
-  elements.currentTime.textContent = formatTime(currentTime); elements.duration.textContent = formatTime(duration);
-  const progress = Number.isFinite(duration) && duration > 0 ? (currentTime / duration) * 100 : 0;
-  elements.seek.value = String(progress); elements.miniProgress.style.width = `${progress}%`;
-});
-elements.audio.addEventListener("ended", () => { if (playbackWanted && !outputNeedsReset) moveTrack(1); });
-elements.audio.addEventListener("error", () => { setPlaybackButtonState(false); setStatus("Не удалось открыть аудио. Обновите раздел и попробуйте снова.", true); });
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (!elements.trackActionSheet.hidden) closeTrackActions(); else if (!elements.fullPlayer.hidden) showPlayer(false); else if (state.currentView !== "home") void goBack();
 });
 if ("mediaSession" in navigator) {
-  navigator.mediaSession.setActionHandler("play", () => { void resumePlayback(true); }); navigator.mediaSession.setActionHandler("pause", pausePlayback);
-  navigator.mediaSession.setActionHandler("previoustrack", () => moveTrack(-1)); navigator.mediaSession.setActionHandler("nexttrack", () => moveTrack(1));
+  const actions = {
+    play: () => { void resumePlayback(true); }, pause: handleMediaPause,
+    previoustrack: () => moveTrack(-1), nexttrack: () => moveTrack(1),
+    seekto: ({ seekTime }) => seekPlayback(seekTime),
+    seekbackward: ({ seekOffset = 10 }) => seekPlayback(playbackPosition() - seekOffset),
+    seekforward: ({ seekOffset = 10 }) => seekPlayback(playbackPosition() + seekOffset),
+  };
+  for (const [action, handler] of Object.entries(actions)) {
+    try { navigator.mediaSession.setActionHandler(action, handler); } catch { /* Older iOS may omit individual actions. */ }
+  }
 }
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("../sw.js", { scope: "../" });
 

@@ -45,6 +45,7 @@ h2 { font-size: 22px; letter-spacing: -.025em; }
 .setup-panel input:focus { border-color: #fff; }
 .primary-button { border: 0; border-radius: 12px; padding: 14px; background: #f5f5f7; color: #0b0b0c; font-weight: 700; }
 .setup-note { margin-top: 12px; color: #8e8e93; font-size: 12px; line-height: 1.45; }
+.playback-diagnostics-button { margin-top: 20px; padding: 10px 14px; border: 0; border-radius: 12px; background: #303033; color: #d1d1d6; font-size: 13px; cursor: pointer; }
 .search-home-view { padding-top: 4px; }
 .mascot-hero { position: relative; height: 224px; display: grid; place-items: center; overflow: visible; pointer-events: none; }
 .cat-mascot { position: absolute; top: -4px; width: calc(100% + 40px); aspect-ratio: 1; display: grid; place-items: center; overflow: hidden; clip-path: inset(0 0 max(0px, calc(100% - 294px)) 0); -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 24px, #000 262px, transparent 294px); mask-image: linear-gradient(to bottom, transparent 0, #000 24px, #000 262px, transparent 294px); }
