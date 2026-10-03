@@ -188,6 +188,16 @@ function calibrateBottomInset() {
   if (document.documentElement.style.getPropertyValue("--viewport-bottom-inset") !== value) {
     document.documentElement.style.setProperty("--viewport-bottom-inset", value);
   }
+  // Center controls in the painted part of the bar. On iOS, visualViewport can
+  // report a shorter height even when that strip still paints on screen.
+  const screenHeight = window.matchMedia("(orientation: landscape)").matches
+    ? Math.min(window.screen.width, window.screen.height) : window.screen.height;
+  const paintedHeight = Math.min(window.innerHeight, screenHeight || window.innerHeight);
+  const clip = Math.min(deficit, Math.max(0, document.body.clientHeight - paintedHeight));
+  const clipValue = `${Math.ceil(clip)}px`;
+  if (document.documentElement.style.getPropertyValue("--bottom-bar-clip-inset") !== clipValue) {
+    document.documentElement.style.setProperty("--bottom-bar-clip-inset", clipValue);
+  }
 }
 function scheduleBottomInset() {
   clearTimeout(bottomInsetTimer);
