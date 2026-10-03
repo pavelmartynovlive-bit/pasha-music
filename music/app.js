@@ -44,28 +44,12 @@ class CatMascot {
 
 const catMascot = new CatMascot(elements.catMascot);
 
-// iOS standalone can change its visual viewport after the initial layout.
-// Keep navigation outside the search viewport lock and dock to the visible edge.
-let bottomBarFrame = 0;
+// Let the fixed-position layout track iOS's viewport; visualViewport height
+// also includes keyboard and browser transitions and must not set a top offset.
 function scheduleBottomBarPosition() {
-  cancelAnimationFrame(bottomBarFrame);
-  bottomBarFrame = requestAnimationFrame(() => {
-    if (elements.bottomBar.hidden) return;
-    const viewport = window.visualViewport;
-    const edge = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
-    elements.bottomBar.style.top = `${edge - elements.bottomBar.offsetHeight}px`;
-    elements.bottomBar.style.bottom = "auto";
-  });
+  elements.bottomBar.style.removeProperty("top");
+  elements.bottomBar.style.removeProperty("bottom");
 }
-window.addEventListener("resize", scheduleBottomBarPosition);
-window.addEventListener("pageshow", scheduleBottomBarPosition);
-window.visualViewport?.addEventListener("resize", scheduleBottomBarPosition);
-window.visualViewport?.addEventListener("scroll", scheduleBottomBarPosition);
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) scheduleBottomBarPosition();
-});
-new ResizeObserver(scheduleBottomBarPosition).observe(elements.bottomBar);
-scheduleBottomBarPosition();
 
 
 function readJson(key, fallback) {
@@ -672,4 +656,6 @@ if (!state.config.backendUrl || LEGACY_BACKEND_URLS.has(state.config.backendUrl)
   state.config.backendUrl = defaultBackendUrl; localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(state.config));
 }
 elements.backendUrlInput.value = state.config.backendUrl; elements.apiKeyInput.value = state.config.apiKey || "";
-setHomeTab(state.homeTab); renderPersonalLibrary(); loadLibrary();
+setHomeTab("search"); renderPersonalLibrary();
+focusSearchInput();
+loadLibrary();

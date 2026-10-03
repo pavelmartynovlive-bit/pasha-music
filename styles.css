@@ -8,7 +8,7 @@ button, input { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
 .app-shell { max-width: 620px; margin: 0 auto; padding: max(22px, env(safe-area-inset-top)) 20px calc(190px + env(safe-area-inset-bottom)); }
 .setup-heading, .section-title, .time-row { display: flex; align-items: center; justify-content: space-between; }
-.bottom-bar { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; min-height: calc(54px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; padding: 4px max(20px, env(safe-area-inset-right)) 4px max(20px, env(safe-area-inset-left)); border-top: 0; background: #222225; backdrop-filter: blur(24px) saturate(150%); -webkit-backdrop-filter: blur(24px) saturate(150%); }
+.bottom-bar { position: fixed; z-index: 30; left: 0; right: 0; top: auto; bottom: 0; min-height: calc(54px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; padding: 4px max(20px, env(safe-area-inset-right)) 4px max(20px, env(safe-area-inset-left)); border-top: 0; background: #222225; backdrop-filter: blur(24px) saturate(150%); -webkit-backdrop-filter: blur(24px) saturate(150%); }
 .bottom-bar[hidden] { display: none; }
 .bottom-bar::after { content: ""; position: absolute; top: 100%; left: 0; right: 0; height: env(safe-area-inset-bottom); background: #222225; pointer-events: none; }
 @media (display-mode: standalone) { html { background: #222225; } }
