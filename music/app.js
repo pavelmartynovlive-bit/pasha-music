@@ -52,7 +52,11 @@ class CatMascot {
       const image = this.images[this._isPlaying ? "playing" : "idle"];
       if (image.dataset.failed !== "true") return;
       image.dataset.failed = "false";
-      image.src = image.dataset.src || image.src;
+      const source = image.dataset.src || image.src;
+      // WebKit keeps the failed image when the same URL is assigned directly.
+      // Clear it for one task before retrying the original, cacheable URL.
+      image.removeAttribute("src");
+      setTimeout(() => { image.src = source; }, 0);
     };
     window.addEventListener("online", this.retryFailed);
     document.addEventListener("visibilitychange", this.retryFailed);

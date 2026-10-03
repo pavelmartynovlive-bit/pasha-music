@@ -48,11 +48,14 @@ With the same test dependencies and local server, run:
 
 ```sh
 python3 tests/home-navigation.py
+python3 tests/startup-loading.py
 node tests/service-worker.cjs
 ```
 
 The navigation checks cover both swipe directions, nested horizontal rails, vertical scrolling, keyboard geometry, settings navigation, and separate scroll positions for Search and My Music in WebKit and Chromium. Touch sequences and the keyboard viewport are simulated; these checks do not replace an iPhone check.
 
 Service-worker checks cover repeat asset loads, offline/slow navigation, cache updates, and bypassing authenticated/API requests. They run in Node without additional dependencies.
+
+Startup checks start their own local fixture server and cover the small cat poster, delayed/failed animation loading, WebKit retry after connectivity returns, lazy loading, cached/offline launch, and preserving a typed search during library loading. API calls use fake local responses.
 
 These checks validate events, playback position, full element volume, and MediaSession commands in headless desktop WebKit/Chromium. They do not measure audible output or reproduce an actual iPhone's microphone ownership, audio routing, and Control Center. A physical iPhone should still be checked with an external voice-recording app, repeated capture/stop cycles, screen lock, manual Pause, remote Play/Next/Previous/seek, and the speaker/Bluetooth route that showed the original reduced-volume issue.
