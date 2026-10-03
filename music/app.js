@@ -250,6 +250,7 @@ function setPlaybackButtonState(isPlaying) {
   elements.miniPlayButton.querySelector(".mini-pause-icon").toggleAttribute("hidden", !isPlaying);
   elements.playButton.setAttribute("aria-label", label); elements.miniPlayButton.setAttribute("aria-label", label);
   catMascot.isPlaying = isPlaying;
+  if ("mediaSession" in navigator) navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
 }
 function normalizeSearchText(value) {
   return value.toLocaleLowerCase("ru").split("").map((letter) => CYRILLIC_TO_LATIN[letter] ?? letter).join("").replace(/[^a-z0-9]+/g, "");
@@ -518,8 +519,78 @@ async function createAndOpenMix(source) {
   } catch (error) { setStatus(error.message, true); if (state.currentView !== "home") showView("home"); }
 }
 
+let playbackWanted = false;
+let interruptedPlayback = false;
+let resumePromise = null;
+
+// Where supported, tell iOS this audio belongs to a media playback session.
+try {
+  if (navigator.audioSession) navigator.audioSession.type = "playback";
+} catch { /* Older Safari versions manage the audio session themselves. */ }
+
+function pausePlayback() {
+  playbackWanted = false;
+  interruptedPlayback = false;
+  elements.audio.pause();
+}
+
+function resumePlayback() {
+  playbackWanted = true;
+  if (resumePromise) return resumePromise;
+  const audio = elements.audio;
+  if (!audio.getAttribute("src")) return Promise.resolve(false);
+  const source = audio.getAttribute("src");
+  const position = audio.currentTime;
+  resumePromise = (async () => {
+    try {
+      try {
+        audio.load();
+        await audio.play();
+      } catch (error) {
+        // Autoplay denial requires a user gesture; reloading cannot fix it.
+        if (error.name === "NotAllowedError" || !playbackWanted || audio.getAttribute("src") !== source) throw error;
+        // iOS can leave the media element unusable after an audio interruption.
+        if (position > 0) {
+          audio.addEventListener("loadedmetadata", () => {
+            if (audio.getAttribute("src") === source && Number.isFinite(audio.duration)) {
+              audio.currentTime = Math.min(position, audio.duration);
+            }
+          }, { once: true });
+        }
+        audio.load();
+        await audio.play();
+      }
+      if (!playbackWanted) { audio.pause(); return false; }
+      interruptedPlayback = false;
+      return true;
+    } catch {
+      if (playbackWanted) {
+        interruptedPlayback = true;
+        setPlaybackButtonState(false);
+        setStatus("Не удалось продолжить. Нажмите Play; если ссылка устарела, выберите трек заново.", true);
+      }
+      return false;
+    } finally { resumePromise = null; }
+  })();
+  return resumePromise;
+}
+
+function resumeAfterInterruption() {
+  if (!document.hidden && interruptedPlayback && playbackWanted && elements.audio.paused && !elements.audio.ended) {
+    void resumePlayback();
+  }
+}
+document.addEventListener("visibilitychange", resumeAfterInterruption);
+window.addEventListener("pageshow", resumeAfterInterruption);
+window.addEventListener("focus", resumeAfterInterruption);
+navigator.audioSession?.addEventListener("statechange", () => {
+  if (navigator.audioSession.state === "interrupted" && playbackWanted) interruptedPlayback = true;
+  if (navigator.audioSession.state === "active") resumeAfterInterruption();
+});
+
 async function playTrack(track, queue) {
   if (!track?.fileUrl) return setStatus("У этого трека нет ссылки для воспроизведения", true);
+  interruptedPlayback = false;
   state.playbackQueue = queue; state.currentTrackKey = trackKey(track); state.currentTrack = track; elements.audio.src = track.fileUrl;
   elements.seek.value = "0"; elements.miniProgress.style.width = "0%"; elements.trackLabel.textContent = "Сейчас играет";
   elements.trackTitle.textContent = track.title; elements.trackArtist.textContent = track.artist; elements.miniTrackTitle.textContent = track.title; elements.miniTrackArtist.textContent = track.artist;
@@ -528,7 +599,7 @@ async function playTrack(track, queue) {
   if (artwork) { elements.coverImage.src = artwork; elements.miniCoverImage.src = artwork; }
   renderLibraryTracks(); renderSearchResults(); if (state.currentCollection) renderCollection();
   if ("mediaSession" in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: track.title, artist: track.artist, album: track.album?.title || "VK Music", artwork: artwork ? [{ src: artwork }] : [] });
-  try { await elements.audio.play(); setStatus("Воспроизведение"); } catch { setStatus("Нажмите Play ещё раз — браузер ожидает жест пользователя", true); }
+  if (await resumePlayback()) setStatus("Воспроизведение");
 }
 function moveTrack(offset) {
   if (!state.playbackQueue.length) return;
@@ -568,14 +639,17 @@ elements.playButton.addEventListener("click", () => {
   if (!elements.audio.src) {
     const initialQueue = state.searchActive && state.searchTracks.length ? state.searchTracks.slice(0, SEARCH_RESULT_LIMIT) : state.libraryTracks;
     if (initialQueue.length) playTrack(initialQueue[0], initialQueue);
-  } else if (elements.audio.paused) elements.audio.play(); else elements.audio.pause();
+  } else if (elements.audio.paused) void resumePlayback(); else pausePlayback();
 });
-elements.miniPlayButton.addEventListener("click", () => { if (elements.audio.paused) elements.audio.play(); else elements.audio.pause(); });
+elements.miniPlayButton.addEventListener("click", () => { if (elements.audio.paused) void resumePlayback(); else pausePlayback(); });
 elements.previousButton.addEventListener("click", () => moveTrack(-1)); elements.nextButton.addEventListener("click", () => moveTrack(1)); elements.miniNextButton.addEventListener("click", () => moveTrack(1));
 elements.seek.addEventListener("input", () => { if (Number.isFinite(elements.audio.duration)) elements.audio.currentTime = (Number(elements.seek.value) / 100) * elements.audio.duration; });
 elements.audio.addEventListener("play", () => setPlaybackButtonState(true));
 elements.audio.addEventListener("playing", () => setPlaybackButtonState(true));
-elements.audio.addEventListener("pause", () => setPlaybackButtonState(false));
+elements.audio.addEventListener("pause", () => {
+  if (playbackWanted && !elements.audio.ended) interruptedPlayback = true;
+  setPlaybackButtonState(false);
+});
 elements.audio.addEventListener("timeupdate", () => {
   const { currentTime, duration } = elements.audio; elements.currentTime.textContent = formatTime(currentTime); elements.duration.textContent = formatTime(duration);
   const progress = Number.isFinite(duration) && duration > 0 ? (currentTime / duration) * 100 : 0;
@@ -588,7 +662,7 @@ document.addEventListener("keydown", (event) => {
   if (!elements.trackActionSheet.hidden) closeTrackActions(); else if (!elements.fullPlayer.hidden) showPlayer(false); else if (state.currentView !== "home") showView("home");
 });
 if ("mediaSession" in navigator) {
-  navigator.mediaSession.setActionHandler("play", () => elements.audio.play()); navigator.mediaSession.setActionHandler("pause", () => elements.audio.pause());
+  navigator.mediaSession.setActionHandler("play", () => { void resumePlayback(); }); navigator.mediaSession.setActionHandler("pause", pausePlayback);
   navigator.mediaSession.setActionHandler("previoustrack", () => moveTrack(-1)); navigator.mediaSession.setActionHandler("nexttrack", () => moveTrack(1));
 }
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("../sw.js", { scope: "../" });
