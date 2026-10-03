@@ -176,7 +176,8 @@ function setHomeTab(tab) {
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
   });
-  window.scrollTo({ top: 0, behavior: "auto" });
+  elements.mainScreen.scrollTo({ top: 0, behavior: "auto" });
+  elements.collectionScreen.scrollTo({ top: 0, behavior: "auto" });
 }
 function showView(view, collection = null) {
   state.currentView = view;
@@ -187,7 +188,8 @@ function showView(view, collection = null) {
   elements.bottomBar.hidden = view !== "home";
   scheduleBottomBarPosition();
   document.body.classList.toggle("detail-open", view !== "home");
-  window.scrollTo({ top: 0, behavior: "auto" });
+  elements.mainScreen.scrollTo({ top: 0, behavior: "auto" });
+  elements.collectionScreen.scrollTo({ top: 0, behavior: "auto" });
 }
 function setPlaybackButtonState(isPlaying) {
   const label = isPlaying ? "Пауза" : "Воспроизвести";
