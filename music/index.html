@@ -9,22 +9,12 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Music" />
-  <link rel="stylesheet" href="../styles.css?v=34" />
+  <link rel="stylesheet" href="../styles.css?v=35" />
   <title>Pasha Music</title>
 </head>
 <body>
   <main class="app-shell" id="mainScreen">
-    <header class="home-header">
-      <nav class="compact-tabs" id="homeTabs" aria-label="Главные разделы">
-        <button class="compact-tab active" type="button" data-home-tab="search" aria-label="Поиск" aria-selected="true">
-          <span class="compact-tab-emoji" aria-hidden="true">🔍</span>
-        </button>
-        <button class="compact-tab" type="button" data-home-tab="library" aria-label="Моя музыка" aria-selected="false">
-          <span class="compact-tab-emoji" aria-hidden="true">🩶</span>
-        </button>
-      </nav>
-      <button class="icon-button" id="settingsButton" type="button" aria-label="Настройки подключения">⚙</button>
-    </header>
+
 
     <section class="setup-panel" id="setupPanel" hidden>
       <div class="setup-heading">
@@ -134,6 +124,17 @@
         <div class="track-list" id="trackList"></div>
       </section>
     </section>
+    <footer class="bottom-bar" id="bottomBar">
+      <nav class="compact-tabs" id="homeTabs" aria-label="Главные разделы">
+        <button class="compact-tab active" type="button" data-home-tab="search" aria-label="Поиск" aria-selected="true">
+          <span class="compact-tab-emoji" aria-hidden="true">🔍</span>
+        </button>
+        <button class="compact-tab" type="button" data-home-tab="library" aria-label="Моя музыка" aria-selected="false">
+          <span class="compact-tab-emoji" aria-hidden="true">🩶</span>
+        </button>
+      </nav>
+      <button class="icon-button" id="settingsButton" type="button" aria-label="Настройки подключения">⚙</button>
+    </footer>
   </main>
 
   <main class="detail-screen" id="collectionScreen" hidden>
