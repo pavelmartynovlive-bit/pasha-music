@@ -18,7 +18,7 @@ const elementIds = [
   "collectionArtist", "collectionBackButton", "collectionCover", "collectionKind", "collectionKicker", "collectionMeta",
   "collectionMixButton", "collectionPlayButton", "collectionScreen", "collectionShuffleButton", "collectionTitle", "collectionTrackList",
   "coverFallback", "coverImage", "currentTime", "duration", "fullPlayer", "libraryAlbumList", "libraryPlaylistList",
-  "homeTabs", "libraryHomeView", "librarySwitcher", "mainScreen", "miniCoverFallback", "miniCoverImage", "miniMixButton", "miniNextButton", "miniPlayButton", "miniPlayer",
+  "bottomBar", "homeTabs", "libraryHomeView", "librarySwitcher", "mainScreen", "miniCoverFallback", "miniCoverImage", "miniMixButton", "miniNextButton", "miniPlayButton", "miniPlayer",
   "miniProgress", "miniTrackArtist", "miniTrackTitle", "nextButton", "openPlayerButton", "personalLibraryCount", "playButton",
   "playerMixButton", "previousButton", "searchAlbumGroup", "searchAlbumList", "searchForm", "searchInput",
   "searchResultList", "searchResults", "searchSuggestions", "searchTrackGroup", "sectionTabs", "sectionTitle",
@@ -43,6 +43,30 @@ class CatMascot {
 }
 
 const catMascot = new CatMascot(elements.catMascot);
+
+// iOS standalone can change its visual viewport after the initial layout.
+// Keep navigation outside the search viewport lock and dock to the visible edge.
+let bottomBarFrame = 0;
+function scheduleBottomBarPosition() {
+  cancelAnimationFrame(bottomBarFrame);
+  bottomBarFrame = requestAnimationFrame(() => {
+    if (elements.bottomBar.hidden) return;
+    const viewport = window.visualViewport;
+    const edge = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
+    elements.bottomBar.style.top = `${edge - elements.bottomBar.offsetHeight}px`;
+    elements.bottomBar.style.bottom = "auto";
+  });
+}
+window.addEventListener("resize", scheduleBottomBarPosition);
+window.addEventListener("pageshow", scheduleBottomBarPosition);
+window.visualViewport?.addEventListener("resize", scheduleBottomBarPosition);
+window.visualViewport?.addEventListener("scroll", scheduleBottomBarPosition);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) scheduleBottomBarPosition();
+});
+new ResizeObserver(scheduleBottomBarPosition).observe(elements.bottomBar);
+scheduleBottomBarPosition();
+
 
 function readJson(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) || fallback; }
@@ -213,6 +237,8 @@ function showView(view, collection = null) {
   elements.mainScreen.hidden = view !== "home";
   elements.collectionScreen.hidden = view === "home";
   elements.homeTabs.hidden = view !== "home";
+  elements.bottomBar.hidden = view !== "home";
+  scheduleBottomBarPosition();
   document.body.classList.toggle("detail-open", view !== "home");
   window.scrollTo({ top: 0, behavior: "auto" });
 }
