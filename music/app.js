@@ -20,7 +20,7 @@ const elementIds = [
   "coverFallback", "coverImage", "currentTime", "duration", "fullPlayer", "libraryAlbumList", "libraryPlaylistList",
   "bottomBar", "homeTabs", "libraryHomeView", "librarySwitcher", "mainScreen", "miniCoverFallback", "miniCoverImage", "miniMixButton", "miniNextButton", "miniPlayButton", "miniPlayer",
   "miniProgress", "miniTrackArtist", "miniTrackTitle", "nextButton", "openPlayerButton", "personalLibraryCount", "playButton",
-  "playerMixButton", "previousButton", "searchAlbumGroup", "searchAlbumList", "searchForm", "searchInput", "searchFocusPreview",
+  "playerMixButton", "playerLikeButton", "playerLikeLabel", "libraryLikedList", "previousButton", "searchAlbumGroup", "searchAlbumList", "searchForm", "searchInput", "searchFocusPreview",
   "searchResultList", "searchResults", "searchSuggestions", "searchTrackGroup", "sectionTabs", "sectionTitle",
   "searchHomeView", "seek", "settingsButton", "settingsScreen", "settingsStatus", "setupForm", "status", "trackActionSheet", "trackArtist", "trackCount", "trackLabel",
   "trackList", "trackTitle", "trackAlbum", "trackAlbumSeparator",
@@ -54,6 +54,7 @@ function normalizeStoredLibrary(raw = {}) {
   return {
     albums: Array.isArray(raw.albums) ? raw.albums : [],
     playlists: Array.isArray(raw.playlists) ? raw.playlists : [],
+    likedTracks: Array.isArray(raw.likedTracks) ? raw.likedTracks : [],
   };
 }
 
@@ -444,17 +445,39 @@ function renderLibraryTracks() {
 }
 function renderPersonalLibrary() {
   const showingAlbums = state.libraryView === "albums";
-  elements.libraryAlbumList.hidden = !showingAlbums; elements.libraryPlaylistList.hidden = showingAlbums;
+  const showingLikes = state.libraryView === "likes";
+  elements.libraryAlbumList.hidden = !showingAlbums;
+  elements.libraryPlaylistList.hidden = state.libraryView !== "playlists";
+  elements.libraryLikedList.hidden = !showingLikes;
   elements.librarySwitcher.querySelectorAll("[data-library-view]").forEach((button) => button.classList.toggle("active", button.dataset.libraryView === state.libraryView));
   if (showingAlbums) {
     elements.personalLibraryCount.textContent = `${state.library.albums.length} альбомов`;
     elements.libraryAlbumList.replaceChildren(...state.library.albums.map(createAlbumCard));
     if (!state.library.albums.length) elements.libraryAlbumList.append(Object.assign(document.createElement("div"), { className: "empty library-empty", textContent: "Альбомы из вашей музыки появятся здесь." }));
+  } else if (showingLikes) {
+    const tracks = state.library.likedTracks;
+    elements.personalLibraryCount.textContent = `${tracks.length} треков`;
+    elements.libraryLikedList.replaceChildren(...tracks.map((track) => createTrackRow(track, tracks)));
+    if (!tracks.length) elements.libraryLikedList.append(Object.assign(document.createElement("div"), { className: "empty library-empty", textContent: "Понравившиеся треки появятся здесь. Нажмите сердечко в плеере." }));
   } else {
     elements.personalLibraryCount.textContent = `${state.library.playlists.length} плейлистов`;
     elements.libraryPlaylistList.replaceChildren(...state.library.playlists.map(createPlaylistCard));
     if (!state.library.playlists.length) elements.libraryPlaylistList.append(Object.assign(document.createElement("div"), { className: "empty library-empty", textContent: "Создайте первый микс из меню трека." }));
   }
+}
+function renderTrackLike() {
+  const liked = Boolean(state.currentTrackKey && state.library.likedTracks.some((track) => trackKey(track) === state.currentTrackKey));
+  elements.playerLikeButton.disabled = !state.currentTrack;
+  elements.playerLikeButton.setAttribute("aria-pressed", String(liked));
+  elements.playerLikeButton.setAttribute("aria-label", liked ? "Убрать трек из любимого" : "Добавить трек в любимое");
+  elements.playerLikeLabel.textContent = liked ? "Залайкано" : "Залайкать";
+}
+function toggleTrackLike() {
+  if (!state.currentTrack) return;
+  const index = state.library.likedTracks.findIndex((track) => trackKey(track) === state.currentTrackKey);
+  if (index < 0) state.library.likedTracks.unshift({ ...state.currentTrack });
+  else state.library.likedTracks.splice(index, 1);
+  saveLibrary(); renderTrackLike(); renderPersonalLibrary();
 }
 function renderSearchResults() {
   elements.searchResults.hidden = !state.searchActive;
@@ -690,14 +713,30 @@ async function createAndOpenMix(source) {
 
 let playbackWanted = false;
 let interruptedPlayback = false;
+let outputNeedsReset = false;
 let resumePromise = null;
 let resumeAttempt = 0;
 let savedPlaybackPosition = 0;
 
-// Where supported, tell iOS this audio belongs to a media playback session.
-try {
-  if (navigator.audioSession) navigator.audioSession.type = "playback";
-} catch { /* Older Safari versions manage the audio session themselves. */ }
+function configureAudioSession(reset = false) {
+  try {
+    if (!navigator.audioSession) return;
+    if (reset) navigator.audioSession.type = "auto";
+    navigator.audioSession.type = "playback";
+  } catch { /* Older Safari versions manage the audio session themselves. */ }
+}
+configureAudioSession();
+
+function markPlaybackInterrupted() {
+  if (!playbackWanted || !state.currentTrack) return;
+  interruptedPlayback = true;
+  outputNeedsReset = true;
+  if (elements.audio.currentTime > 0) savedPlaybackPosition = elements.audio.currentTime;
+  // A suspended play() promise must not block recovery when the session returns.
+  resumeAttempt += 1;
+  resumePromise = null;
+  setPlaybackButtonState(false);
+}
 
 function pausePlayback() {
   playbackWanted = false;
@@ -715,6 +754,23 @@ function playWithTimeout(audio) {
   ]).finally(() => clearTimeout(timer));
 }
 
+async function reloadPlayback(source, position, isCurrent) {
+  const audio = elements.audio;
+  const restorePosition = () => {
+    if (isCurrent() && position > 0) {
+      audio.currentTime = Number.isFinite(audio.duration) ? Math.min(position, audio.duration) : position;
+    }
+  };
+  audio.addEventListener("loadedmetadata", restorePosition, { once: true });
+  try {
+    audio.pause();
+    configureAudioSession(true);
+    audio.src = source;
+    audio.load();
+    await playWithTimeout(audio);
+  } finally { audio.removeEventListener("loadedmetadata", restorePosition); }
+}
+
 function resumePlayback(force = false) {
   playbackWanted = true;
   if (resumePromise && !force) return resumePromise;
@@ -723,12 +779,19 @@ function resumePlayback(force = false) {
   const attempt = ++resumeAttempt;
   const track = state.currentTrack;
   const source = audio.getAttribute("src");
-  const position = Math.max(audio.currentTime || 0, savedPlaybackPosition);
+  // A silent decoder can keep advancing while the microphone owns the output.
+  const position = outputNeedsReset ? savedPlaybackPosition : Math.max(audio.currentTime || 0, savedPlaybackPosition);
   const isCurrent = () => attempt === resumeAttempt && playbackWanted && state.currentTrack === track;
-  const promise = (async () => {
+  // System Play must also repair paused=false when iOS lost the interruption event.
+  const resetOutput = outputNeedsReset || navigator.audioSession?.state === "interrupted" || (force && !audio.paused);
+  let resolveResume;
+  const promise = new Promise((resolve) => { resolveResume = resolve; });
+  resumePromise = promise;
+  void (async () => {
     try {
       try {
-        await playWithTimeout(audio);
+        if (resetOutput) await reloadPlayback(source, position, isCurrent);
+        else { configureAudioSession(); await playWithTimeout(audio); }
       } catch (error) {
         if (!isCurrent()) return false;
         // A denied autoplay still needs an explicit user/system Play command.
@@ -746,51 +809,53 @@ function resumePlayback(force = false) {
           refreshedSource = data.result.track.fileUrl;
           track.fileUrl = refreshedSource;
         }
-        const restorePosition = () => {
-          if (!isCurrent()) return;
-          if (position > 0) {
-            audio.currentTime = Number.isFinite(audio.duration) ? Math.min(position, audio.duration) : position;
-          }
-        };
-        audio.addEventListener("loadedmetadata", restorePosition, { once: true });
-        audio.src = refreshedSource;
-        audio.load();
-        try { await playWithTimeout(audio); }
-        finally { audio.removeEventListener("loadedmetadata", restorePosition); }
+        await reloadPlayback(refreshedSource, position, isCurrent);
       }
       if (!isCurrent()) return false;
+      if (audio.paused || navigator.audioSession?.state === "interrupted") {
+        interruptedPlayback = true;
+        outputNeedsReset = true;
+        setPlaybackButtonState(false);
+        return false;
+      }
       interruptedPlayback = false;
+      outputNeedsReset = false;
       setPlaybackButtonState(true);
       return true;
     } catch {
       if (isCurrent()) {
         interruptedPlayback = true;
+        outputNeedsReset = true;
         setPlaybackButtonState(false);
         setStatus("Не удалось продолжить воспроизведение. Нажмите Play ещё раз.", true);
       }
       return false;
     } finally { if (attempt === resumeAttempt) resumePromise = null; }
-  })();
-  resumePromise = promise;
+  })().then(resolveResume);
   return promise;
 }
 
 function resumeAfterInterruption(allowBackground = false) {
-  if ((!document.hidden || allowBackground === true) && interruptedPlayback && playbackWanted && elements.audio.paused && !elements.audio.ended) {
+  if ((!document.hidden || allowBackground === true) && interruptedPlayback && playbackWanted && (!elements.audio.ended || outputNeedsReset) && navigator.audioSession?.state !== "interrupted") {
     void resumePlayback();
   }
 }
 document.addEventListener("visibilitychange", resumeAfterInterruption);
 window.addEventListener("pageshow", resumeAfterInterruption);
 window.addEventListener("focus", resumeAfterInterruption);
+let previousAudioSessionState = navigator.audioSession?.state;
 navigator.audioSession?.addEventListener("statechange", () => {
-  if (navigator.audioSession.state === "interrupted" && playbackWanted) interruptedPlayback = true;
-  if (navigator.audioSession.state === "active") resumeAfterInterruption(true);
+  const sessionState = navigator.audioSession.state;
+  const wasInterrupted = previousAudioSessionState === "interrupted";
+  previousAudioSessionState = sessionState;
+  if (sessionState === "interrupted") markPlaybackInterrupted();
+  else if (sessionState === "active" || wasInterrupted) resumeAfterInterruption(true);
 });
 
 async function playTrack(track, queue) {
   if (!track?.fileUrl) return setStatus("У этого трека нет ссылки для воспроизведения", true);
   interruptedPlayback = false;
+  outputNeedsReset = false;
   resumeAttempt += 1; resumePromise = null; savedPlaybackPosition = 0;
   state.playbackQueue = queue; state.currentTrackKey = trackKey(track); state.currentTrack = track; elements.audio.src = track.fileUrl;
   elements.seek.value = "0"; elements.miniProgress.style.width = "0%"; elements.trackLabel.textContent = "Сейчас играет";
@@ -801,6 +866,7 @@ async function playTrack(track, queue) {
   elements.coverImage.hidden = !artwork; elements.coverFallback.hidden = Boolean(artwork); elements.miniCoverImage.hidden = !artwork; elements.miniCoverFallback.hidden = Boolean(artwork);
   if (artwork) { elements.coverImage.src = artwork; elements.miniCoverImage.src = artwork; }
   renderLibraryTracks(); renderSearchResults(); if (state.currentCollection) renderCollection();
+  renderTrackLike();
   if ("mediaSession" in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: track.title, artist: track.artist, album: track.album?.title || "VK Music", artwork: artwork ? [{ src: artwork }] : [] });
   if (await resumePlayback()) setStatus("Воспроизведение");
 }
@@ -879,6 +945,7 @@ elements.artistPlayButton.addEventListener("click", () => {
   if (tracks.length) void playTrack(tracks[0], tracks);
 });
 elements.playerMixButton.addEventListener("click", () => { if (state.currentTrack) createAndOpenMix({ kind: "track", track: state.currentTrack }); });
+elements.playerLikeButton.addEventListener("click", toggleTrackLike);
 elements.miniMixButton.addEventListener("click", () => { if (state.currentTrack) createAndOpenMix({ kind: "track", track: state.currentTrack }); });
 elements.actionSheetMixButton.addEventListener("click", () => { if (state.actionTrack) createAndOpenMix({ kind: "track", track: state.actionTrack }); });
 elements.actionSheetCloseButton.addEventListener("click", closeTrackActions); elements.actionSheetBackdrop.addEventListener("click", closeTrackActions);
@@ -886,9 +953,9 @@ elements.playButton.addEventListener("click", () => {
   if (!elements.audio.src) {
     const initialQueue = state.searchActive && state.searchTracks.length ? state.searchTracks.slice(0, SEARCH_RESULT_LIMIT) : state.libraryTracks;
     if (initialQueue.length) playTrack(initialQueue[0], initialQueue);
-  } else if (elements.audio.paused) void resumePlayback(true); else pausePlayback();
+  } else if (elements.audio.paused || interruptedPlayback || outputNeedsReset) void resumePlayback(true); else pausePlayback();
 });
-elements.miniPlayButton.addEventListener("click", () => { if (elements.audio.paused) void resumePlayback(true); else pausePlayback(); });
+elements.miniPlayButton.addEventListener("click", () => { if (elements.audio.paused || interruptedPlayback || outputNeedsReset) void resumePlayback(true); else pausePlayback(); });
 elements.previousButton.addEventListener("click", () => moveTrack(-1)); elements.nextButton.addEventListener("click", () => moveTrack(1)); elements.miniNextButton.addEventListener("click", () => moveTrack(1));
 elements.seek.addEventListener("input", () => {
   if (Number.isFinite(elements.audio.duration)) {
@@ -896,20 +963,22 @@ elements.seek.addEventListener("input", () => {
     elements.audio.currentTime = savedPlaybackPosition;
   }
 });
-elements.audio.addEventListener("play", () => setPlaybackButtonState(true));
-elements.audio.addEventListener("playing", () => setPlaybackButtonState(true));
+elements.audio.addEventListener("playing", () => {
+  if (playbackWanted && !outputNeedsReset && navigator.audioSession?.state !== "interrupted") setPlaybackButtonState(true);
+});
 elements.audio.addEventListener("pause", () => {
-  if (playbackWanted && !elements.audio.ended) interruptedPlayback = true;
+  if (playbackWanted && !elements.audio.ended && !resumePromise) markPlaybackInterrupted();
   setPlaybackButtonState(false);
 });
 elements.audio.addEventListener("timeupdate", () => {
-  const { currentTime, duration } = elements.audio;
-  if (Number.isFinite(currentTime) && currentTime > 0) savedPlaybackPosition = currentTime;
+  const { duration } = elements.audio;
+  const currentTime = outputNeedsReset ? savedPlaybackPosition : elements.audio.currentTime;
+  if (!outputNeedsReset && Number.isFinite(currentTime) && currentTime > 0) savedPlaybackPosition = currentTime;
   elements.currentTime.textContent = formatTime(currentTime); elements.duration.textContent = formatTime(duration);
   const progress = Number.isFinite(duration) && duration > 0 ? (currentTime / duration) * 100 : 0;
   elements.seek.value = String(progress); elements.miniProgress.style.width = `${progress}%`;
 });
-elements.audio.addEventListener("ended", () => moveTrack(1));
+elements.audio.addEventListener("ended", () => { if (playbackWanted && !outputNeedsReset) moveTrack(1); });
 elements.audio.addEventListener("error", () => { setPlaybackButtonState(false); setStatus("Не удалось открыть аудио. Обновите раздел и попробуйте снова.", true); });
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
@@ -926,6 +995,6 @@ if (!state.config.backendUrl || LEGACY_BACKEND_URLS.has(state.config.backendUrl)
   state.config.backendUrl = defaultBackendUrl; localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(state.config));
 }
 elements.backendUrlInput.value = state.config.backendUrl; elements.apiKeyInput.value = state.config.apiKey || "";
-setHomeTab("search"); renderPersonalLibrary();
+setHomeTab("search"); renderPersonalLibrary(); renderTrackLike();
 focusSearchInput();
 loadLibrary();

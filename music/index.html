@@ -42,7 +42,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Music" />
-  <link rel="stylesheet" href="../styles.css?v=59" />
+  <link rel="stylesheet" href="../styles.css?v=60" />
   <link rel="stylesheet" href="./artist.css?v=1" />
   <title>Pasha Music</title>
 </head>
@@ -134,9 +134,11 @@
         <nav class="library-switcher" id="librarySwitcher" aria-label="Моя музыка">
           <button class="library-switch active" type="button" data-library-view="albums">Альбомы</button>
           <button class="library-switch" type="button" data-library-view="playlists">Плейлисты</button>
+          <button class="library-switch" type="button" data-library-view="likes">Любимое</button>
         </nav>
         <div class="album-grid" id="libraryAlbumList"></div>
         <div class="playlist-grid" id="libraryPlaylistList" hidden></div>
+        <div class="track-list" id="libraryLikedList" hidden></div>
       </section>
 
       <section class="library">
@@ -257,7 +259,10 @@
         <button class="play" id="playButton" type="button" aria-label="Воспроизвести"><svg class="player-play-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m8 5 11 7-11 7Z"/></svg><svg class="player-pause-icon" hidden viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5v14M16 5v14"/></svg></button>
         <button class="control" id="nextButton" type="button" aria-label="Следующий трек"><svg  viewBox="0 0 24 24" aria-hidden="true"><path d="m5 5 10 7-10 7ZM19 5v14"/></svg></button>
       </div>
-      <button class="player-mix-button" id="playerMixButton" type="button"><svg  viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 18V6l9-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="15" cy="16" r="3"/><path d="M4 5h4M6 3v4"/></svg><span>Создать микс по треку</span></button>
+      <div class="player-actions">
+        <button class="player-mix-button" id="playerMixButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 18V6l9-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="15" cy="16" r="3"/><path d="M4 5h4M6 3v4"/></svg><span>Создать микс по треку</span></button>
+        <button class="player-like-button" id="playerLikeButton" type="button" aria-pressed="false" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.5 4.5a5.3 5.3 0 0 0-7.5 0L12 5.6l-1-1.1a5.3 5.3 0 0 0-7.5 7.5L12 20.5l8.5-8.5a5.3 5.3 0 0 0 0-7.5Z"/></svg><span id="playerLikeLabel">Залайкать</span></button>
+      </div>
     </div>
   </section>
 
@@ -281,6 +286,6 @@
       <button class="icon-button" id="settingsButton" type="button" aria-label="Настройки подключения"><svg class="bottom-bar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.5 3h5l.6 2.7 2.1 1.2 2.6-.8 2.5 4.3-2 1.9v2.4l2 1.9-2.5 4.3-2.6-.8-2.1 1.2-.6 2.7h-5l-.6-2.7-2.1-1.2-2.6.8-2.5-4.3 2-1.9v-2.4l-2-1.9L4.3 6l2.6.8L9 5.7Z" transform="translate(0 -1.5) scale(1 .95)"/><circle cx="12" cy="12" r="3"/></svg></button>
     </footer>
   <audio id="audio" preload="metadata" playsinline></audio>
-  <script type="module" src="./app.js?v=55"></script>
+  <script type="module" src="./app.js?v=56"></script>
 </body>
 </html>
