@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Music" />
-  <link rel="stylesheet" href="../styles.css?v=40" />
+  <link rel="stylesheet" href="../styles.css?v=41" />
   <title>Pasha Music</title>
 </head>
 <body>
@@ -168,8 +168,8 @@
     <button class="mini-control mini-mix" id="miniMixButton" type="button" aria-label="Создать микс по треку">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l9-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="15" cy="16" r="3"/><path d="M4 5h4M6 3v4"/></svg>
     </button>
-    <button class="mini-control" id="miniPlayButton" type="button" aria-label="Пауза">❚❚</button>
-    <button class="mini-control mini-next" id="miniNextButton" type="button" aria-label="Следующий трек">›</button>
+    <button class="mini-control" id="miniPlayButton" type="button" aria-label="Пауза"><svg class="mini-play-icon" hidden viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg><svg class="mini-pause-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg></button>
+    <button class="mini-control mini-next" id="miniNextButton" type="button" aria-label="Следующий трек"><svg  viewBox="0 0 24 24" aria-hidden="true"><path d="m5 5 10 7-10 7ZM19 5v14"/></svg></button>
     <span class="mini-progress" aria-hidden="true"><span id="miniProgress"></span></span>
   </section>
 
@@ -197,7 +197,7 @@
       <div class="controls">
         <button class="control" id="previousButton" type="button" aria-label="Предыдущий трек">‹</button>
         <button class="play" id="playButton" type="button" aria-label="Воспроизвести">▶</button>
-        <button class="control" id="nextButton" type="button" aria-label="Следующий трек">›</button>
+        <button class="control" id="nextButton" type="button" aria-label="Следующий трек"><svg  viewBox="0 0 24 24" aria-hidden="true"><path d="m5 5 10 7-10 7ZM19 5v14"/></svg></button>
       </div>
     </div>
   </section>
@@ -211,6 +211,6 @@
     </div>
   </section>
   <audio id="audio" preload="metadata" playsinline></audio>
-  <script type="module" src="./app.js?v=34"></script>
+  <script type="module" src="./app.js?v=35"></script>
 </body>
 </html>

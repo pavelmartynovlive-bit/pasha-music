@@ -219,7 +219,9 @@ function showView(view, collection = null) {
 function setPlaybackButtonState(isPlaying) {
   const label = isPlaying ? "Пауза" : "Воспроизвести";
   const symbol = isPlaying ? "❚❚" : "▶";
-  elements.playButton.textContent = symbol; elements.miniPlayButton.textContent = symbol;
+  elements.playButton.textContent = symbol;
+  elements.miniPlayButton.querySelector(".mini-play-icon").hidden = isPlaying;
+  elements.miniPlayButton.querySelector(".mini-pause-icon").hidden = !isPlaying;
   elements.playButton.setAttribute("aria-label", label); elements.miniPlayButton.setAttribute("aria-label", label);
   catMascot.isPlaying = isPlaying;
 }
