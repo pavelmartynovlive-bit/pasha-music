@@ -3,7 +3,6 @@
 html, body { margin: 0; min-height: 100%; background: #06060f; }
 body { min-height: 100dvh; background: linear-gradient(to right, #041634 0%, #08091d 52%, #06060f 100%); background-attachment: fixed; }
 body.player-open { overflow: hidden; }
-body.search-input-active { overflow: hidden; overscroll-behavior: none; }
 button, input { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
 .app-shell { max-width: 620px; margin: 0 auto; padding: max(22px, env(safe-area-inset-top)) 20px calc(190px + env(safe-area-inset-bottom)); }
@@ -167,23 +166,23 @@ h2 { font-size: 22px; letter-spacing: -.025em; }
 
 .full-player { position: fixed; z-index: 50; inset: 0; overflow: hidden auto; background: #111314; }
 .player-backdrop { position: absolute; inset: 0; background: linear-gradient(180deg, #24242a, #111116 70%); }
-.full-player-content { position: relative; z-index: 1; width: min(100%, 480px); min-height: 100dvh; display: flex; flex-direction: column; gap: 16px; margin: 0 auto; padding: max(12px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); }
+.full-player-content { position: relative; z-index: 1; width: min(100%, 560px); min-height: 100dvh; display: flex; flex-direction: column; gap: 20px; margin: 0 auto; padding: max(12px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); }
 .player-header { flex: 0 0 44px; display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; color: #a5a5af; font-size: 12px; font-weight: 500; letter-spacing: .06em; text-align: center; text-transform: uppercase; }
 .player-close { width: 44px; height: 44px; display: grid; place-items: center; border: 0; padding: 0; background: transparent; color: #fff; }
 .full-player svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
 .full-player svg[hidden], .full-player .cover [hidden] { display: none; }
-.full-player .cover { flex-shrink: 0; width: min(100%, 40dvh, 360px); margin: 4px auto 0; border-radius: 20px; }
-.full-player .track-meta { min-height: 0; margin: auto 0 0; padding-top: 8px; }
+.full-player .cover { flex-shrink: 0; width: min(100%, 46dvh, 440px); margin: 16px auto 8px; border-radius: 20px; }
+.full-player .track-meta { min-height: 0; margin: 0; padding-top: 0; }
 .full-player .track-label { display: none; }
 .full-player .track-title { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -.02em; }
 .full-player .track-artist { margin-top: 6px; color: #a5a5af; font-size: 16px; }
 .full-player .seek { flex-shrink: 0; height: 20px; margin: 0; accent-color: #fff; cursor: pointer; }
 .full-player .time-row { margin: -14px 0 0; color: #a5a5af; font-size: 12px; font-variant-numeric: tabular-nums; }
-.full-player .controls { display: grid; grid-template-columns: 56px 72px 56px; justify-content: space-between; align-items: center; gap: 20px; margin: 4px auto 0; width: min(100%, 300px); }
+.full-player .controls { display: grid; grid-template-columns: 56px 80px 56px; justify-content: space-between; align-items: center; gap: 20px; margin: 4px auto 0; width: min(100%, 340px); }
 .full-player .control, .full-player .play { display: grid; place-items: center; padding: 0; opacity: 1; }
 .full-player .control { width: 56px; height: 56px; color: #fff; }
 .full-player .control svg { width: 28px; height: 28px; }
-.full-player .play { width: 72px; height: 72px; background: #fff; color: #111116; }
+.full-player .play { width: 80px; height: 80px; background: #fff; color: #111116; }
 .full-player .play svg { width: 32px; height: 32px; }
 @media (max-height: 600px) { .full-player-content { gap: 10px; } .full-player .cover { width: min(100%, 32dvh); } .full-player .track-title { font-size: 20px; } }
 @media (min-width: 700px) { .app-shell { padding-inline: 0; } }
@@ -258,7 +257,7 @@ h2 { font-size: 22px; letter-spacing: -.025em; }
 .collection-track-list .track-duration { min-width: 18px; text-align: center; }
 
 /* Mix actions */
-.player-mix-button { align-self: flex-start; display: flex; align-items: center; gap: 8px; min-height: 44px; border: 0; border-radius: 12px; padding: 8px 12px; background: rgba(255,255,255,.07); color: #fff; font-size: 13px; }
+.player-mix-button { align-self: stretch; justify-content: center; margin-top: auto; display: flex; align-items: center; gap: 8px; min-height: 44px; border: 0; border-radius: 12px; padding: 8px 12px; background: rgba(255,255,255,.07); color: #fff; font-size: 13px; }
 body.sheet-open { overflow: hidden; }
 .action-sheet { position: fixed; z-index: 80; inset: 0; display: grid; align-items: end; }
 .action-sheet-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: rgba(0,0,0,.58); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }
