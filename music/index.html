@@ -9,29 +9,12 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Music" />
-  <link rel="stylesheet" href="../styles.css?v=56" />
+  <link rel="stylesheet" href="../styles.css?v=57" />
   <title>Pasha Music</title>
 </head>
 <body>
   <main class="app-shell" id="mainScreen">
 
-
-    <section class="setup-panel" id="setupPanel" hidden>
-      <div class="setup-heading">
-        <div><div class="eyebrow">Подключение</div><h2>Музыкальный backend</h2></div>
-        <button class="close-button" id="closeSetupButton" type="button" aria-label="Закрыть">×</button>
-      </div>
-      <form id="setupForm">
-        <label>HTTPS-адрес backend
-          <input id="backendUrlInput" type="url" inputmode="url" placeholder="https://music-api.example.com" autocomplete="url" required />
-        </label>
-        <label>Ключ доступа
-          <input id="apiKeyInput" type="password" placeholder="Хранится только на этом устройстве" autocomplete="off" />
-        </label>
-        <button class="primary-button" type="submit">Сохранить и подключиться</button>
-      </form>
-      <p class="setup-note">VK cookies остаются только на сервере и никогда не сохраняются в PWA.</p>
-    </section>
 
     <section class="home-view search-home-view" id="searchHomeView">
       <div class="mascot-hero" aria-hidden="true">
@@ -126,6 +109,28 @@
       </section>
     </section>
 
+  </main>
+
+  <main class="detail-screen settings-screen" id="settingsScreen" hidden aria-labelledby="settingsTitle">
+    <header class="detail-topbar">
+      <button class="back-button" id="closeSetupButton" type="button" aria-label="Назад"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button>
+      <span id="settingsTitle">Настройки</span>
+      <span class="detail-spacer"></span>
+    </header>
+    <section class="setup-panel" id="setupPanel" aria-labelledby="connectionTitle">
+      <div class="setup-heading"><h2 id="connectionTitle">Подключение</h2></div>
+      <form id="setupForm">
+        <label>Адрес сервера
+          <input id="backendUrlInput" type="url" inputmode="url" placeholder="https://music-api.example.com" autocomplete="url" required />
+        </label>
+        <label>Ключ доступа
+          <input id="apiKeyInput" type="password" placeholder="Хранится только на этом устройстве" autocomplete="off" />
+        </label>
+        <button class="primary-button" type="submit">Сохранить и подключиться</button>
+      </form>
+      <p class="settings-status" id="settingsStatus" role="status" hidden></p>
+      <p class="setup-note">Ключ доступа сохраняется только на этом устройстве.</p>
+    </section>
   </main>
 
   <main class="detail-screen" id="collectionScreen" hidden>
@@ -229,6 +234,6 @@
       <button class="icon-button" id="settingsButton" type="button" aria-label="Настройки подключения"><svg class="bottom-bar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.5 3h5l.6 2.7 2.1 1.2 2.6-.8 2.5 4.3-2 1.9v2.4l2 1.9-2.5 4.3-2.6-.8-2.1 1.2-.6 2.7h-5l-.6-2.7-2.1-1.2-2.6.8-2.5-4.3 2-1.9v-2.4l-2-1.9L4.3 6l2.6.8L9 5.7Z" transform="translate(0 -1.5) scale(1 .95)"/><circle cx="12" cy="12" r="3"/></svg></button>
     </footer>
   <audio id="audio" preload="metadata" playsinline></audio>
-  <script type="module" src="./app.js?v=52"></script>
+  <script type="module" src="./app.js?v=53"></script>
 </body>
 </html>

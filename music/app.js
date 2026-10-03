@@ -22,7 +22,7 @@ const elementIds = [
   "miniProgress", "miniTrackArtist", "miniTrackTitle", "nextButton", "openPlayerButton", "personalLibraryCount", "playButton",
   "playerMixButton", "previousButton", "searchAlbumGroup", "searchAlbumList", "searchForm", "searchInput", "searchFocusPreview",
   "searchResultList", "searchResults", "searchSuggestions", "searchTrackGroup", "sectionTabs", "sectionTitle",
-  "searchHomeView", "seek", "settingsButton", "setupForm", "setupPanel", "status", "trackActionSheet", "trackArtist", "trackCount", "trackLabel",
+  "searchHomeView", "seek", "settingsButton", "settingsScreen", "settingsStatus", "setupForm", "status", "trackActionSheet", "trackArtist", "trackCount", "trackLabel",
   "trackList", "trackTitle", "trackAlbum", "trackAlbumSeparator",
   "artistScreen", "artistBackButton", "artistTitle", "artistStatus", "artistTrackList", "artistAlbumList",
 ];
@@ -79,7 +79,28 @@ function setStatus(message, isError = false) {
   elements.status.classList.toggle("error", isError);
 }
 function saveLibrary() { localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(state.library)); }
-function showSetup(show = true) { elements.setupPanel.hidden = !show; if (show) elements.backendUrlInput.focus(); }
+function setSettingsStatus(message, isError = false) {
+  elements.settingsStatus.textContent = message;
+  elements.settingsStatus.hidden = !message;
+  elements.settingsStatus.classList.toggle("error", isError);
+}
+function reportConnectionError(error) {
+  let message = error.message || "Не удалось подключиться к музыке.";
+  if (error.name === "TypeError" || /load failed|failed to fetch|networkerror/i.test(message)) {
+    message = "Не удалось подключиться к музыке. Попробуйте позже или проверьте настройки.";
+  } else if (/cookies|backend/i.test(message)) {
+    message = "Не удалось подключиться к музыке. Проверьте настройки подключения.";
+  }
+  setStatus(message, true);
+  setSettingsStatus(message, true);
+}
+function openSettings() {
+  elements.searchInput.blur();
+  elements.backendUrlInput.value = state.config.backendUrl || PUBLIC_BACKEND_URL;
+  elements.apiKeyInput.value = state.config.apiKey || "";
+  showView("settings");
+}
+function blurSettingsInputs() { elements.backendUrlInput.blur(); elements.apiKeyInput.blur(); }
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
   (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const isStandalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
@@ -124,7 +145,7 @@ function prepareSearchFocus() {
   searchFocusTimer = setTimeout(finishSearchFocus, 650);
 }
 function focusSearchInput(fromGesture = false) {
-  if (state.currentView !== "home" || state.homeTab !== "search" || !elements.setupPanel.hidden) return;
+  if (state.currentView !== "home" || state.homeTab !== "search") return;
   const alreadyFocused = document.activeElement === elements.searchInput;
   const reopenKeyboard = fromGesture && isIOS && !isKeyboardOpen() && !searchActivatedByGesture;
   if (alreadyFocused && !reopenKeyboard) return;
@@ -254,7 +275,7 @@ function mergeAlbumsFromTracks(tracks, persist = false) {
 
 function showPlayer(show = true) {
   if (show && !state.currentTrack) return;
-  if (show) elements.searchInput.blur();
+  if (show) { elements.searchInput.blur(); blurSettingsInputs(); }
   elements.fullPlayer.hidden = !show;
   document.body.classList.toggle("player-open", show);
 }
@@ -282,12 +303,14 @@ function showView(view, collection = null, remember = true) {
       scroll: [elements.mainScreen.scrollTop, elements.collectionScreen.scrollTop, elements.artistScreen.scrollTop],
     });
   }
+  if (state.currentView === "settings" && view !== "settings") blurSettingsInputs();
   showPlayer(false);
   state.currentView = view;
   state.currentCollection = collection;
   elements.mainScreen.hidden = view !== "home";
   elements.collectionScreen.hidden = view !== "album" && view !== "playlist";
   elements.artistScreen.hidden = view !== "artist";
+  elements.settingsScreen.hidden = view !== "settings";
   elements.homeTabs.hidden = view !== "home";
   elements.bottomBar.hidden = view !== "home";
   document.body.classList.toggle("detail-open", view !== "home");
@@ -467,14 +490,15 @@ function scheduleSuggestions() {
   renderSuggestions(localSuggestions(query)); state.suggestionTimer = setTimeout(() => loadSuggestions(query), SUGGESTION_DELAY);
 }
 async function loadSection(sectionId) {
-  if (!sectionId) return;
+  if (!sectionId) return true;
   try {
     state.currentSectionId = sectionId; clearSearch(true); renderSections(); setStatus("Загружаю треки…");
     const data = await api(`/api/sections/${encodeURIComponent(sectionId)}`);
     state.libraryTracks = data.result.tracks || []; elements.sectionTitle.textContent = data.result.title || "Треки";
     mergeAlbumsFromTracks(state.libraryTracks, true); renderLibraryTracks(); renderPersonalLibrary();
     setStatus(state.libraryTracks.length ? "" : "Раздел пуст");
-  } catch (error) { setStatus(error.message, true); showSetup(error.message.includes("ключ") || error.message.includes("backend")); }
+    return true;
+  } catch (error) { reportConnectionError(error); return false; }
 }
 async function searchMusic(query) {
   const normalizedQuery = query.trim(); if (normalizedQuery.length < 2) return setStatus("Введите минимум два символа для поиска", true);
@@ -488,8 +512,7 @@ async function searchMusic(query) {
     state.searchTotal = data.result.count || state.searchTracks.length;
     renderSearchResults(); setStatus(state.searchTracks.length || state.searchAlbums.length ? "Поиск завершён" : "Ничего не найдено");
   } catch (error) {
-    Object.assign(state, { searchTracks: [], searchAlbums: [], searchTotal: 0 }); renderSearchResults(); setStatus(error.message, true);
-    showSetup(error.message.includes("ключ") || error.message.includes("backend"));
+    Object.assign(state, { searchTracks: [], searchAlbums: [], searchTotal: 0 }); renderSearchResults(); reportConnectionError(error);
   }
 }
 function clearSearch(clearInput = true) {
@@ -503,8 +526,10 @@ async function loadLibrary() {
     setStatus("Подключаюсь к VK Music…"); const health = await api("/api/health");
     if (!health.hasCookieP || !health.hasRemixSid) throw new Error("На backend не настроены VK cookies");
     const data = await api("/api/sections"); state.sections = data.result.sections || []; renderSections();
-    await loadSection(data.result.defaultSection || state.sections[0]?.id);
-  } catch (error) { setStatus(error.message, true); showSetup(true); }
+    const sectionId = data.result.defaultSection || state.sections[0]?.id;
+    if (!sectionId) { setStatus(""); return true; }
+    return await loadSection(sectionId);
+  } catch (error) { reportConnectionError(error); return false; }
 }
 
 function renderCollectionArtwork(collection) {
@@ -738,13 +763,18 @@ function moveTrack(offset) {
 
 elements.setupForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  const submitButton = elements.setupForm.querySelector("button[type=submit]");
+  submitButton.disabled = true;
   try {
     state.config = { backendUrl: normalizeBackendUrl(elements.backendUrlInput.value), apiKey: elements.apiKeyInput.value.trim() };
-    localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(state.config)); showSetup(false); await loadLibrary();
-  } catch (error) { setStatus(error.message, true); }
+    localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(state.config));
+    setSettingsStatus("Подключаюсь…");
+    if (await loadLibrary()) setSettingsStatus("Подключение сохранено.");
+  } catch (error) { setSettingsStatus(error.message, true); }
+  finally { submitButton.disabled = false; }
 });
-elements.settingsButton.addEventListener("click", () => showSetup(true));
-elements.closeSetupButton.addEventListener("click", () => showSetup(false));
+elements.settingsButton.addEventListener("click", openSettings);
+elements.closeSetupButton.addEventListener("click", () => { void goBack(); });
 elements.homeTabs.addEventListener("click", (event) => { const button = event.target.closest("[data-home-tab]"); if (button) { setHomeTab(button.dataset.homeTab); if (state.homeTab === "search") focusSearchInput(true); } });
 elements.searchForm.addEventListener("submit", (event) => { event.preventDefault(); searchMusic(elements.searchInput.value); elements.searchInput.blur(); });
 elements.searchInput.addEventListener("input", () => { updateSearchFocusPreview(); scheduleSuggestions(); });
