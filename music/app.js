@@ -108,11 +108,11 @@ function normalizeBackendUrl(value) {
   if (url.protocol !== "https:" && !(isLocal && url.protocol === "http:")) throw new Error("Для backend нужен HTTPS-адрес");
   return url.href.replace(/\/$/, "");
 }
-async function api(path) {
+async function api(path, signal) {
   if (!state.config.backendUrl) throw new Error("Сначала укажите адрес backend");
   const headers = { Accept: "application/json" };
   if (state.config.apiKey) headers.Authorization = `Bearer ${state.config.apiKey}`;
-  const response = await fetch(`${state.config.backendUrl}${path}`, { headers, cache: "no-store" });
+  const response = await fetch(`${state.config.backendUrl}${path}`, { headers, cache: "no-store", signal });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) {
     if (response.status === 401) throw new Error("Ключ доступа не подошёл");
@@ -538,6 +538,8 @@ async function createAndOpenMix(source) {
 let playbackWanted = false;
 let interruptedPlayback = false;
 let resumePromise = null;
+let resumeAttempt = 0;
+let savedPlaybackPosition = 0;
 
 // Where supported, tell iOS this audio belongs to a media playback session.
 try {
@@ -547,51 +549,81 @@ try {
 function pausePlayback() {
   playbackWanted = false;
   interruptedPlayback = false;
+  resumeAttempt += 1;
+  resumePromise = null;
   elements.audio.pause();
 }
 
-function resumePlayback() {
-  playbackWanted = true;
-  if (resumePromise) return resumePromise;
-  const audio = elements.audio;
-  if (!audio.getAttribute("src")) return Promise.resolve(false);
-  const source = audio.getAttribute("src");
-  const position = audio.currentTime;
-  resumePromise = (async () => {
-    try {
-      try {
-        await audio.play();
-      } catch (error) {
-        // Autoplay denial requires a user gesture; reloading cannot fix it.
-        if (error.name === "NotAllowedError" || !playbackWanted || audio.getAttribute("src") !== source) throw error;
-        // iOS can leave the media element unusable after an audio interruption.
-        if (position > 0) {
-          audio.addEventListener("loadedmetadata", () => {
-            if (audio.getAttribute("src") === source && Number.isFinite(audio.duration)) {
-              audio.currentTime = Math.min(position, audio.duration);
-            }
-          }, { once: true });
-        }
-        audio.load();
-        await audio.play();
-      }
-      if (!playbackWanted) { audio.pause(); return false; }
-      interruptedPlayback = false;
-      return true;
-    } catch {
-      if (playbackWanted) {
-        interruptedPlayback = true;
-        setPlaybackButtonState(false);
-        setStatus("Не удалось продолжить. Нажмите Play; если ссылка устарела, выберите трек заново.", true);
-      }
-      return false;
-    } finally { resumePromise = null; }
-  })();
-  return resumePromise;
+function playWithTimeout(audio) {
+  let timer;
+  return Promise.race([
+    audio.play(),
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Playback timed out")), 8000); }),
+  ]).finally(() => clearTimeout(timer));
 }
 
-function resumeAfterInterruption() {
-  if (!document.hidden && interruptedPlayback && playbackWanted && elements.audio.paused && !elements.audio.ended) {
+function resumePlayback(force = false) {
+  playbackWanted = true;
+  if (resumePromise && !force) return resumePromise;
+  const audio = elements.audio;
+  if (!audio.getAttribute("src")) return Promise.resolve(false);
+  const attempt = ++resumeAttempt;
+  const track = state.currentTrack;
+  const source = audio.getAttribute("src");
+  const position = Math.max(audio.currentTime || 0, savedPlaybackPosition);
+  const isCurrent = () => attempt === resumeAttempt && playbackWanted && state.currentTrack === track;
+  const promise = (async () => {
+    try {
+      try {
+        await playWithTimeout(audio);
+      } catch (error) {
+        if (!isCurrent()) return false;
+        // A denied autoplay still needs an explicit user/system Play command.
+        if (error.name === "NotAllowedError") throw error;
+        let refreshedSource = source;
+        if (track) {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 10000);
+          let data;
+          try {
+            data = await api(`/api/tracks/${encodeURIComponent(track.ownerId)}/${encodeURIComponent(track.id)}`, controller.signal);
+          } finally { clearTimeout(timer); }
+          if (!isCurrent()) return false;
+          if (!data.result.track?.fileUrl) throw new Error("Нет ссылки на трек");
+          refreshedSource = data.result.track.fileUrl;
+          track.fileUrl = refreshedSource;
+        }
+        const restorePosition = () => {
+          if (!isCurrent()) return;
+          if (position > 0) {
+            audio.currentTime = Number.isFinite(audio.duration) ? Math.min(position, audio.duration) : position;
+          }
+        };
+        audio.addEventListener("loadedmetadata", restorePosition, { once: true });
+        audio.src = refreshedSource;
+        audio.load();
+        try { await playWithTimeout(audio); }
+        finally { audio.removeEventListener("loadedmetadata", restorePosition); }
+      }
+      if (!isCurrent()) return false;
+      interruptedPlayback = false;
+      setPlaybackButtonState(true);
+      return true;
+    } catch {
+      if (isCurrent()) {
+        interruptedPlayback = true;
+        setPlaybackButtonState(false);
+        setStatus("Не удалось продолжить воспроизведение. Нажмите Play ещё раз.", true);
+      }
+      return false;
+    } finally { if (attempt === resumeAttempt) resumePromise = null; }
+  })();
+  resumePromise = promise;
+  return promise;
+}
+
+function resumeAfterInterruption(allowBackground = false) {
+  if ((!document.hidden || allowBackground === true) && interruptedPlayback && playbackWanted && elements.audio.paused && !elements.audio.ended) {
     void resumePlayback();
   }
 }
@@ -600,12 +632,13 @@ window.addEventListener("pageshow", resumeAfterInterruption);
 window.addEventListener("focus", resumeAfterInterruption);
 navigator.audioSession?.addEventListener("statechange", () => {
   if (navigator.audioSession.state === "interrupted" && playbackWanted) interruptedPlayback = true;
-  if (navigator.audioSession.state === "active") resumeAfterInterruption();
+  if (navigator.audioSession.state === "active") resumeAfterInterruption(true);
 });
 
 async function playTrack(track, queue) {
   if (!track?.fileUrl) return setStatus("У этого трека нет ссылки для воспроизведения", true);
   interruptedPlayback = false;
+  resumeAttempt += 1; resumePromise = null; savedPlaybackPosition = 0;
   state.playbackQueue = queue; state.currentTrackKey = trackKey(track); state.currentTrack = track; elements.audio.src = track.fileUrl;
   elements.seek.value = "0"; elements.miniProgress.style.width = "0%"; elements.trackLabel.textContent = "Сейчас играет";
   elements.trackTitle.textContent = track.title; elements.trackArtist.textContent = artistForTrack(track).name; elements.trackArtist.disabled = false;
@@ -665,11 +698,16 @@ elements.playButton.addEventListener("click", () => {
   if (!elements.audio.src) {
     const initialQueue = state.searchActive && state.searchTracks.length ? state.searchTracks.slice(0, SEARCH_RESULT_LIMIT) : state.libraryTracks;
     if (initialQueue.length) playTrack(initialQueue[0], initialQueue);
-  } else if (elements.audio.paused) void resumePlayback(); else pausePlayback();
+  } else if (elements.audio.paused) void resumePlayback(true); else pausePlayback();
 });
-elements.miniPlayButton.addEventListener("click", () => { if (elements.audio.paused) void resumePlayback(); else pausePlayback(); });
+elements.miniPlayButton.addEventListener("click", () => { if (elements.audio.paused) void resumePlayback(true); else pausePlayback(); });
 elements.previousButton.addEventListener("click", () => moveTrack(-1)); elements.nextButton.addEventListener("click", () => moveTrack(1)); elements.miniNextButton.addEventListener("click", () => moveTrack(1));
-elements.seek.addEventListener("input", () => { if (Number.isFinite(elements.audio.duration)) elements.audio.currentTime = (Number(elements.seek.value) / 100) * elements.audio.duration; });
+elements.seek.addEventListener("input", () => {
+  if (Number.isFinite(elements.audio.duration)) {
+    savedPlaybackPosition = (Number(elements.seek.value) / 100) * elements.audio.duration;
+    elements.audio.currentTime = savedPlaybackPosition;
+  }
+});
 elements.audio.addEventListener("play", () => setPlaybackButtonState(true));
 elements.audio.addEventListener("playing", () => setPlaybackButtonState(true));
 elements.audio.addEventListener("pause", () => {
@@ -677,7 +715,9 @@ elements.audio.addEventListener("pause", () => {
   setPlaybackButtonState(false);
 });
 elements.audio.addEventListener("timeupdate", () => {
-  const { currentTime, duration } = elements.audio; elements.currentTime.textContent = formatTime(currentTime); elements.duration.textContent = formatTime(duration);
+  const { currentTime, duration } = elements.audio;
+  if (Number.isFinite(currentTime) && currentTime > 0) savedPlaybackPosition = currentTime;
+  elements.currentTime.textContent = formatTime(currentTime); elements.duration.textContent = formatTime(duration);
   const progress = Number.isFinite(duration) && duration > 0 ? (currentTime / duration) * 100 : 0;
   elements.seek.value = String(progress); elements.miniProgress.style.width = `${progress}%`;
 });
@@ -688,7 +728,7 @@ document.addEventListener("keydown", (event) => {
   if (!elements.trackActionSheet.hidden) closeTrackActions(); else if (!elements.fullPlayer.hidden) showPlayer(false); else if (state.currentView !== "home") void goBack();
 });
 if ("mediaSession" in navigator) {
-  navigator.mediaSession.setActionHandler("play", () => { void resumePlayback(); }); navigator.mediaSession.setActionHandler("pause", pausePlayback);
+  navigator.mediaSession.setActionHandler("play", () => { void resumePlayback(true); }); navigator.mediaSession.setActionHandler("pause", pausePlayback);
   navigator.mediaSession.setActionHandler("previoustrack", () => moveTrack(-1)); navigator.mediaSession.setActionHandler("nexttrack", () => moveTrack(1));
 }
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("../sw.js", { scope: "../" });

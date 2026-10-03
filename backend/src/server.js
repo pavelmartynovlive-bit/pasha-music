@@ -481,6 +481,26 @@ app.get("/api/search", async (req, res) => {
   }
 });
 
+app.get("/api/tracks/:ownerId/:audioId", async (req, res) => {
+  const ownerId = Number(req.params.ownerId);
+  const audioId = Number(req.params.audioId);
+  if (!Number.isInteger(ownerId) || !Number.isInteger(audioId) || !ownerId || audioId <= 0) {
+    return res.status(400).json({ ok: false, error: "Некорректный ID трека" });
+  }
+  try {
+    const track = await withVkAudio(async (vk) => {
+      const response = await vk.request("audio.getById", new URLSearchParams({ audios: `${ownerId}_${audioId}` }));
+      if (!response.success) throw response.error;
+      const raw = response.data?.response;
+      const items = Array.isArray(raw) ? raw : raw?.items;
+      const item = items?.find((audio) => Number(audio.owner_id) === ownerId && Number(audio.id) === audioId);
+      if (!item?.url) throw new Error("VK не вернул ссылку на этот трек");
+      return getAudioItem(item);
+    });
+    res.json({ ok: true, result: { track } });
+  } catch (error) { sendVkError(res, error, "VK refreshTrack"); }
+});
+
 app.get("/api/tracks/:ownerId/:audioId/recommendations", async (req, res) => {
   if (!/^-?\d+$/.test(req.params.ownerId) || !/^\d+$/.test(req.params.audioId)) {
     return res.status(400).json({
