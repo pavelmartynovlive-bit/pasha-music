@@ -20,7 +20,7 @@ const elementIds = [
   "coverFallback", "coverImage", "currentTime", "duration", "fullPlayer", "libraryAlbumList", "libraryPlaylistList",
   "bottomBar", "homeTabs", "libraryHomeView", "librarySwitcher", "mainScreen", "miniCoverFallback", "miniCoverImage", "miniMixButton", "miniNextButton", "miniPlayButton", "miniPlayer",
   "miniProgress", "miniTrackArtist", "miniTrackTitle", "nextButton", "openPlayerButton", "personalLibraryCount", "playButton",
-  "playerMixButton", "previousButton", "searchAlbumGroup", "searchAlbumList", "searchForm", "searchInput",
+  "playerMixButton", "previousButton", "searchAlbumGroup", "searchAlbumList", "searchForm", "searchInput", "searchFocusPreview",
   "searchResultList", "searchResults", "searchSuggestions", "searchTrackGroup", "sectionTabs", "sectionTitle",
   "searchHomeView", "seek", "settingsButton", "setupForm", "setupPanel", "status", "trackActionSheet", "trackArtist", "trackCount", "trackLabel",
   "trackList", "trackTitle", "trackAlbum", "trackAlbumSeparator",
@@ -44,14 +44,6 @@ class CatMascot {
 }
 
 const catMascot = new CatMascot(elements.catMascot);
-
-// Let the fixed-position layout track iOS's viewport; visualViewport height
-// also includes keyboard and browser transitions and must not set a top offset.
-function scheduleBottomBarPosition() {
-  elements.bottomBar.style.removeProperty("top");
-  elements.bottomBar.style.removeProperty("bottom");
-}
-
 
 function readJson(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) || fallback; }
@@ -88,20 +80,78 @@ function setStatus(message, isError = false) {
 }
 function saveLibrary() { localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(state.library)); }
 function showSetup(show = true) { elements.setupPanel.hidden = !show; if (show) elements.backendUrlInput.focus(); }
-// The keyboard overlays the app. Keep the shell in the layout viewport:
-// visualViewport shrinks when the keyboard opens and would lift navigation.
-function focusSearchInput() {
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+document.documentElement.classList.toggle("is-standalone",
+  window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true);
+
+let searchFocusGuard = null;
+let searchFocusTimer = 0;
+let searchActivatedByGesture = false;
+let searchKeyboardObserved = false;
+function isKeyboardOpen() {
+  const viewport = window.visualViewport;
+  return Boolean(viewport && viewport.scale === 1 && elements.mainScreen.offsetHeight > 0 &&
+    document.body.clientHeight - viewport.height > 120);
+}
+function updateSearchFocusPreview() {
+  elements.searchFocusPreview.textContent = elements.searchInput.value || elements.searchInput.placeholder;
+  elements.searchFocusPreview.classList.toggle("has-value", Boolean(elements.searchInput.value));
+}
+function finishSearchFocus() {
+  clearTimeout(searchFocusTimer);
+  searchFocusGuard = null;
+  elements.searchForm.classList.remove("search-focus-opening");
+  elements.searchFocusPreview.hidden = true;
+  if (!isKeyboardOpen()) searchActivatedByGesture = false;
+}
+function scheduleSearchReveal() {
+  if (!searchFocusGuard) return;
+  clearTimeout(searchFocusTimer);
+  const elapsed = performance.now() - searchFocusGuard.started;
+  const wait = Math.min(Math.max(0, 650 - elapsed), Math.max(100, 300 - elapsed));
+  searchFocusTimer = setTimeout(finishSearchFocus, wait);
+}
+function prepareSearchFocus() {
+  finishSearchFocus();
+  searchFocusGuard = { started: performance.now() };
+  updateSearchFocusPreview();
+  elements.searchFocusPreview.hidden = false;
+  elements.searchForm.classList.add("search-focus-opening");
+  // Flush the hidden style before native focus reveal starts. Restore only
+  // after the keyboard transition, not in the next animation frame.
+  getComputedStyle(elements.searchInput).opacity;
+  searchFocusTimer = setTimeout(finishSearchFocus, 650);
+}
+function focusSearchInput(fromGesture = false) {
   if (state.currentView !== "home" || state.homeTab !== "search" || !elements.setupPanel.hidden) return;
-  if (document.activeElement === elements.searchInput) return;
+  const alreadyFocused = document.activeElement === elements.searchInput;
+  const reopenKeyboard = fromGesture && isIOS && !isKeyboardOpen() && !searchActivatedByGesture;
+  if (alreadyFocused && !reopenKeyboard) return;
   const scrollTop = elements.mainScreen.scrollTop;
-  // Safari tries to reveal visible inputs on focus even with preventScroll.
-  // Focus synchronously during the tap, then restore before the next paint.
-  const opacity = elements.searchInput.style.opacity;
-  elements.searchInput.style.opacity = "0";
+  if (alreadyFocused) elements.searchInput.blur();
+  if (isIOS && !isKeyboardOpen()) prepareSearchFocus();
   elements.searchInput.focus({ preventScroll: true });
   elements.mainScreen.scrollTop = scrollTop;
-  requestAnimationFrame(() => { elements.searchInput.style.opacity = opacity; });
+  if (fromGesture) searchActivatedByGesture = true;
 }
+function onSearchViewportChange() {
+  if (isKeyboardOpen()) searchKeyboardObserved = true;
+  else if (searchKeyboardObserved) {
+    searchKeyboardObserved = false;
+    searchActivatedByGesture = false;
+  }
+  scheduleSearchReveal();
+}
+window.visualViewport?.addEventListener("resize", onSearchViewportChange);
+window.visualViewport?.addEventListener("scroll", scheduleSearchReveal);
+window.addEventListener("orientationchange", () => {
+  finishSearchFocus(); searchActivatedByGesture = false;
+});
+window.addEventListener("pagehide", finishSearchFocus);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { finishSearchFocus(); searchActivatedByGesture = false; }
+});
 function normalizeBackendUrl(value) {
   const url = new URL(value.trim());
   const isLocal = ["localhost", "127.0.0.1"].includes(url.hostname);
@@ -210,7 +260,6 @@ function showView(view, collection = null, remember = true) {
   elements.artistScreen.hidden = view !== "artist";
   elements.homeTabs.hidden = view !== "home";
   elements.bottomBar.hidden = view !== "home";
-  scheduleBottomBarPosition();
   document.body.classList.toggle("detail-open", view !== "home");
   elements.mainScreen.scrollTo({ top: 0, behavior: "auto" });
   elements.collectionScreen.scrollTo({ top: 0, behavior: "auto" });
@@ -666,17 +715,43 @@ elements.setupForm.addEventListener("submit", async (event) => {
 });
 elements.settingsButton.addEventListener("click", () => showSetup(true));
 elements.closeSetupButton.addEventListener("click", () => showSetup(false));
-elements.homeTabs.addEventListener("click", (event) => { const button = event.target.closest("[data-home-tab]"); if (button) { setHomeTab(button.dataset.homeTab); if (state.homeTab === "search") focusSearchInput(); } });
+elements.homeTabs.addEventListener("click", (event) => { const button = event.target.closest("[data-home-tab]"); if (button) { setHomeTab(button.dataset.homeTab); if (state.homeTab === "search") focusSearchInput(true); } });
 elements.searchForm.addEventListener("submit", (event) => { event.preventDefault(); searchMusic(elements.searchInput.value); elements.searchInput.blur(); });
-elements.searchInput.addEventListener("input", scheduleSuggestions);
+elements.searchInput.addEventListener("input", () => { updateSearchFocusPreview(); scheduleSuggestions(); });
 elements.searchInput.addEventListener("pointerdown", (event) => {
-  if (event.isPrimary && event.button === 0 && document.activeElement !== elements.searchInput) {
+  if (event.isPrimary && event.button === 0 &&
+    (document.activeElement !== elements.searchInput || (isIOS && !isKeyboardOpen() && !searchActivatedByGesture))) {
     event.preventDefault();
-    focusSearchInput();
+    focusSearchInput(true);
   }
 });
 elements.searchInput.addEventListener("focus", scheduleSuggestions);
-elements.clearSearchButton.addEventListener("click", () => clearSearch(true));
+elements.searchInput.addEventListener("blur", () => { finishSearchFocus(); searchActivatedByGesture = false; });
+function clearSearchAndFocus() {
+  clearSearch(true); updateSearchFocusPreview(); focusSearchInput(true);
+}
+let clearSearchPointerId = null;
+let clearSearchPointerHandled = false;
+elements.clearSearchButton.addEventListener("pointerdown", (event) => {
+  clearSearchPointerHandled = false;
+  if (event.isPrimary && event.button === 0 && document.activeElement === elements.searchInput) {
+    event.preventDefault();
+    clearSearchPointerId = event.pointerId;
+    clearSearchPointerHandled = true;
+    elements.clearSearchButton.setPointerCapture(event.pointerId);
+  }
+});
+elements.clearSearchButton.addEventListener("pointerup", (event) => {
+  if (clearSearchPointerId !== event.pointerId) return;
+  clearSearchPointerId = null;
+  const bounds = elements.clearSearchButton.getBoundingClientRect();
+  if (event.clientX >= bounds.left && event.clientX <= bounds.right &&
+    event.clientY >= bounds.top && event.clientY <= bounds.bottom) clearSearchAndFocus();
+});
+elements.clearSearchButton.addEventListener("pointercancel", () => { clearSearchPointerId = null; });
+elements.clearSearchButton.addEventListener("click", (event) => {
+  if (!clearSearchPointerHandled || event.detail === 0) clearSearchAndFocus();
+});
 elements.librarySwitcher.addEventListener("click", (event) => { if (event.target.dataset.libraryView) { state.libraryView = event.target.dataset.libraryView; renderPersonalLibrary(); } });
 elements.collectionBackButton.addEventListener("click", () => { void goBack(); });
 elements.collectionPlayButton.addEventListener("click", () => { const tracks = state.currentCollection?.tracks || []; if (tracks.length) playTrack(tracks[0], tracks); });

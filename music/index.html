@@ -2,14 +2,14 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=overlays-content" />
   <meta name="theme-color" content="#041634" />
   <link rel="manifest" href="../manifest.webmanifest" />
   <link rel="apple-touch-icon" href="../icons/icon-180.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Music" />
-  <link rel="stylesheet" href="../styles.css?v=54" />
+  <link rel="stylesheet" href="../styles.css?v=55" />
   <title>Pasha Music</title>
 </head>
 <body>
@@ -88,6 +88,7 @@
         <form class="search-form" id="searchForm" role="search">
           <button class="search-submit" type="submit" aria-label="Найти музыку">⌕</button>
           <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="Трек или исполнитель" autocomplete="off" aria-label="Поиск музыки" aria-controls="searchSuggestions searchResults" />
+          <span class="search-focus-preview" id="searchFocusPreview" aria-hidden="true" hidden></span>
           <button class="search-clear" id="clearSearchButton" type="button" aria-label="Очистить поиск" hidden>×</button>
         </form>
 
@@ -228,6 +229,6 @@
       <button class="icon-button" id="settingsButton" type="button" aria-label="Настройки подключения"><svg class="bottom-bar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.5 3h5l.6 2.7 2.1 1.2 2.6-.8 2.5 4.3-2 1.9v2.4l2 1.9-2.5 4.3-2.6-.8-2.1 1.2-.6 2.7h-5l-.6-2.7-2.1-1.2-2.6.8-2.5-4.3 2-1.9v-2.4l-2-1.9L4.3 6l2.6.8L9 5.7Z" transform="translate(0 -1.5) scale(1 .95)"/><circle cx="12" cy="12" r="3"/></svg></button>
     </footer>
   <audio id="audio" preload="metadata" playsinline></audio>
-  <script type="module" src="./app.js?v=50"></script>
+  <script type="module" src="./app.js?v=51"></script>
 </body>
 </html>
