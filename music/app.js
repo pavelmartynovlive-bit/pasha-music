@@ -88,32 +88,33 @@ function setStatus(message, isError = false) {
 }
 function saveLibrary() { localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(state.library)); }
 function showSetup(show = true) { elements.setupPanel.hidden = !show; if (show) elements.backendUrlInput.focus(); }
-let searchFocusAnchor = null;
-let searchFocusFrame = 0;
-let searchFocusTimer = 0;
-function settleSearchFocus() {
-  if (document.activeElement !== elements.searchInput) return;
-  cancelAnimationFrame(searchFocusFrame);
-  searchFocusFrame = requestAnimationFrame(() => {
-    if (document.activeElement !== elements.searchInput) return;
-    // Safari pans its visual viewport to reveal the focused field. Keep the
-    // fixed app at the same visible origin without moving the field itself.
-    document.body.style.top = `${window.visualViewport?.offsetTop || 0}px`;
-    if (searchFocusAnchor) elements.mainScreen.scrollTop = searchFocusAnchor.scrollTop;
-    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
-  });
-  clearTimeout(searchFocusTimer);
-  searchFocusTimer = setTimeout(() => { searchFocusAnchor = null; }, 450);
+// Use one viewport coordinate system for the shell and its navigation row.
+// Never scroll the document in response to a viewport event: iOS generates
+// more viewport events from those scrolls, causing a visible correction loop.
+function syncAppViewport() {
+  const viewport = window.visualViewport;
+  if (viewport && viewport.scale !== 1) return;
+  document.body.style.top = `${viewport?.offsetTop || 0}px`;
+  document.body.style.height = `${viewport?.height || window.innerHeight}px`;
 }
-function prepareSearchFocus() {
-  searchFocusAnchor = { scrollTop: elements.mainScreen.scrollTop };
-  settleSearchFocus();
-}
+window.visualViewport?.addEventListener("resize", syncAppViewport);
+window.visualViewport?.addEventListener("scroll", syncAppViewport);
+window.addEventListener("resize", syncAppViewport);
+window.addEventListener("pageshow", syncAppViewport);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) syncAppViewport(); });
+syncAppViewport();
+
 function focusSearchInput() {
   if (state.currentView !== "home" || state.homeTab !== "search" || !elements.setupPanel.hidden) return;
-  prepareSearchFocus();
+  if (document.activeElement === elements.searchInput) return;
+  const scrollTop = elements.mainScreen.scrollTop;
+  // Safari tries to reveal visible inputs on focus even with preventScroll.
+  // Focus synchronously during the tap, then restore before the next paint.
+  const opacity = elements.searchInput.style.opacity;
+  elements.searchInput.style.opacity = "0";
   elements.searchInput.focus({ preventScroll: true });
-  settleSearchFocus();
+  elements.mainScreen.scrollTop = scrollTop;
+  requestAnimationFrame(() => { elements.searchInput.style.opacity = opacity; });
 }
 function normalizeBackendUrl(value) {
   const url = new URL(value.trim());
@@ -655,16 +656,7 @@ elements.searchInput.addEventListener("pointerdown", (event) => {
     focusSearchInput();
   }
 });
-elements.searchInput.addEventListener("focus", () => {
-  if (!searchFocusAnchor) prepareSearchFocus();
-  settleSearchFocus(); scheduleSuggestions();
-});
-elements.searchInput.addEventListener("blur", () => {
-  searchFocusAnchor = null; clearTimeout(searchFocusTimer); cancelAnimationFrame(searchFocusFrame);
-  document.body.style.removeProperty("top");
-});
-window.visualViewport?.addEventListener("resize", settleSearchFocus);
-window.visualViewport?.addEventListener("scroll", settleSearchFocus);
+elements.searchInput.addEventListener("focus", scheduleSuggestions);
 elements.clearSearchButton.addEventListener("click", () => clearSearch(true));
 elements.librarySwitcher.addEventListener("click", (event) => { if (event.target.dataset.libraryView) { state.libraryView = event.target.dataset.libraryView; renderPersonalLibrary(); } });
 elements.collectionBackButton.addEventListener("click", () => { void goBack(); });
