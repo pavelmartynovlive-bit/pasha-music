@@ -15,17 +15,17 @@ button { -webkit-tap-highlight-color: transparent; }
 .setup-heading, .section-title, .time-row { display: flex; align-items: center; justify-content: space-between; }
 @media (display-mode: standalone) { body { height: 100vh; height: 100lvh; } }
 html.is-standalone body { height: 100vh; height: 100lvh; }
+/* iOS can leave a strip outside the paintable viewport. Blend into the
+   native canvas color before that edge, without moving content or controls. */
+body::after { content: ""; position: absolute; inset-inline: 0; bottom: var(--viewport-bottom-inset); height: clamp(0px, var(--viewport-bottom-inset), 56px); background: linear-gradient(to bottom, transparent, #06060f); pointer-events: none; z-index: 20; }
+html:has(body.player-open) { background-color: #111314; }
 .home-view[hidden] { display: none; }
-.home-navigation { display: flex; justify-content: flex-end; margin-top: 8px; }
-.home-library-link { min-height: 44px; display: inline-flex; align-items: center; gap: 7px; border: 0; padding: 0 8px; background: transparent; color: #a8a1b4; font-size: 14px; cursor: pointer; }
-.home-library-link svg { width: 18px; height: 18px; }
-.home-library-link svg, .library-topbar svg { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
-.library-topbar { min-height: 48px; display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 8px; align-items: center; }
+.library-topbar { min-height: 48px; display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: 8px; align-items: center; }
 .library-topbar h1 { font-size: clamp(23px, 6.5vw, 30px); }
-.home-search-button, .library-settings-button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; padding: 0; background: transparent; color: #f5f5f7; cursor: pointer; }
-.library-topbar svg { width: 24px; height: 24px; }
+.library-settings-button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; padding: 0; background: transparent; color: #f5f5f7; cursor: pointer; }
+.library-topbar svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
 .library-count { color: #94949e; font-size: 13px; }
-.home-library-link:focus-visible, .home-search-button:focus-visible, .library-settings-button:focus-visible { outline: 2px solid #b8a1dc; outline-offset: 2px; border-radius: 10px; }
+.library-settings-button:focus-visible { outline: 2px solid #b8a1dc; outline-offset: 2px; border-radius: 10px; }
 .eyebrow { margin-bottom: 3px; color: #8e8e93; font-size: 13px; }
 h1, h2, p { margin: 0; }
 h1 { font-size: 30px; letter-spacing: -.04em; }

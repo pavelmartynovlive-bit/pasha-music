@@ -42,7 +42,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Music" />
-  <link rel="stylesheet" href="../styles.css?v=63" />
+  <link rel="stylesheet" href="../styles.css?v=64" />
   <link rel="stylesheet" href="./artist.css?v=1" />
   <title>Pasha Music</title>
 </head>
@@ -113,10 +113,6 @@
           <button class="search-clear" id="clearSearchButton" type="button" aria-label="Очистить поиск" hidden>×</button>
         </form>
 
-        <nav class="home-navigation" aria-label="Переход между экранами">
-          <button class="home-library-link" id="openLibraryButton" type="button">Моя музыка <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>
-        </nav>
-
         <div class="search-suggestions" id="searchSuggestions" aria-label="Поисковые подсказки" hidden></div>
 
         <section class="search-results" id="searchResults" aria-live="polite" hidden>
@@ -133,7 +129,6 @@
 
     <section class="home-view library-home-view" id="libraryHomeView" hidden>
       <header class="library-topbar">
-        <button class="home-search-button" id="openSearchButton" type="button" aria-label="Вернуться к поиску"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button>
         <h1>Моя музыка</h1>
         <button class="library-settings-button" id="settingsButton" type="button" aria-label="Настройки"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-.5 2.5-2 1.2-2.4-.8-2.5 4.3 1.9 1.6v2.4l-1.9 1.6 2.5 4.3 2.4-.8 2 1.2L9 23h6l.5-2.5 2-1.2 2.4.8 2.5-4.3-1.9-1.6v-2.4l1.9-1.6-2.5-4.3-2.4.8-2-1.2L15 3Z" transform="translate(1.2 .3) scale(.9)"/><circle cx="12" cy="12" r="3"/></svg></button>
       </header>
@@ -287,6 +282,6 @@
     </div>
   </section>
   <audio id="audio" preload="metadata" playsinline></audio>
-  <script type="module" src="./app.js?v=61"></script>
+  <script type="module" src="./app.js?v=62"></script>
 </body>
 </html>

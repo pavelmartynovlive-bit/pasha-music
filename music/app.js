@@ -18,7 +18,7 @@ const elementIds = [
   "collectionArtist", "collectionBackButton", "collectionCover", "collectionKind", "collectionKicker", "collectionMeta",
   "collectionMixButton", "collectionPlayButton", "collectionScreen", "collectionShuffleButton", "collectionTitle", "collectionTrackList",
   "coverFallback", "coverImage", "currentTime", "duration", "fullPlayer", "libraryAlbumList", "libraryPlaylistList",
-  "openLibraryButton", "openSearchButton", "libraryHomeView", "librarySwitcher", "mainScreen", "miniCoverFallback", "miniCoverImage", "miniMixButton", "miniNextButton", "miniPlayButton", "miniPlayer",
+  "libraryHomeView", "librarySwitcher", "mainScreen", "miniCoverFallback", "miniCoverImage", "miniMixButton", "miniNextButton", "miniPlayButton", "miniPlayer",
   "miniProgress", "miniTrackArtist", "miniTrackTitle", "nextButton", "openPlayerButton", "personalLibraryCount", "playButton",
   "playerMixButton", "playerLikeButton", "playerLikeLabel", "playerLibraryStatus", "libraryTracksSection", "previousButton", "searchAlbumGroup", "searchAlbumList", "searchForm", "searchInput", "searchFocusPreview",
   "searchResultList", "searchResults", "searchSuggestions", "searchTrackGroup", "sectionTabs", "sectionTitle",
@@ -333,7 +333,6 @@ let homeTransition = null;
 function setHomeTab(tab, animate = false) {
   const next = tab === "library" ? "library" : "search";
   const changed = state.homeTab !== next;
-  const moveFocus = document.activeElement === elements.openLibraryButton || document.activeElement === elements.openSearchButton;
   if (changed) {
     if (!elements.mainScreen.hidden) homeScroll[state.homeTab] = elements.mainScreen.scrollTop;
     elements.searchInput.blur();
@@ -345,12 +344,11 @@ function setHomeTab(tab, animate = false) {
   elements.searchHomeView.hidden = !showingSearch;
   elements.libraryHomeView.hidden = showingSearch;
   if (changed) elements.mainScreen.scrollTop = homeScroll[next];
-  if (changed && moveFocus) (showingSearch ? elements.openLibraryButton : elements.openSearchButton).focus({ preventScroll: true });
   if (changed && animate && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
     const view = showingSearch ? elements.searchHomeView : elements.libraryHomeView;
     homeTransition = view.animate([
-      { transform: `translateX(${showingSearch ? -40 : 40}px)`, opacity: .4 },
-      { transform: "translateX(0)", opacity: 1 },
+      { transform: `translateX(${showingSearch ? -100 : 100}%)` },
+      { transform: "translateX(0)" },
     ], { duration: 220, easing: "cubic-bezier(.2,.7,.2,1)" });
   }
 }
@@ -371,6 +369,9 @@ function isSwipeControl(target) {
   return false;
 }
 elements.mainScreen.addEventListener("touchstart", (event) => {
+  // A new tap is intentional; suppress only the compatibility click belonging
+  // to the completed swipe, not the next settings/track tap.
+  suppressHomeClickUntil = 0;
   homeSwipe = null;
   if (!canSwipeHome() || event.touches.length !== 1 || isSwipeControl(event.target)) return;
   const touch = event.touches[0];
@@ -1311,8 +1312,6 @@ elements.playbackDiagnosticsButton.addEventListener("click", async () => {
   elements.playbackDiagnosticsStatus.hidden = false;
 });
 elements.closeSetupButton.addEventListener("click", () => { void goBack(); });
-elements.openLibraryButton.addEventListener("click", () => setHomeTab("library", true));
-elements.openSearchButton.addEventListener("click", () => setHomeTab("search", true));
 elements.searchForm.addEventListener("submit", (event) => { event.preventDefault(); searchMusic(elements.searchInput.value); elements.searchInput.blur(); });
 elements.searchInput.addEventListener("input", () => { updateSearchFocusPreview(); scheduleSuggestions(); });
 elements.searchInput.addEventListener("pointerdown", (event) => {

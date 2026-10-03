@@ -96,24 +96,41 @@ async def scenario(browser, engine, width, height, paintable, safe_bottom):
 
     try:
         await install(page, width, height, paintable, safe_bottom)
-        await check("footer_removed", "!document.querySelector('#bottomBar')")
+        await check("swipe_only_navigation", "!document.querySelector('#bottomBar, #openLibraryButton, #openSearchButton, .home-navigation')")
         await check("main_fills_body", "Math.abs(mainScreen.getBoundingClientRect().height-document.body.clientHeight)<1")
+        await check("paintable_edge_blended", f"""() => {{
+          const edge=getComputedStyle(document.body,'::after');
+          return Math.abs(parseFloat(edge.bottom)-{height - paintable})<1&&Math.abs(parseFloat(edge.height)-{min(height - paintable, 56)})<1&&edge.pointerEvents==='none';
+        }}""")
         await check("swipe_left_to_library", "() => {__touch(mainScreen,[280,390],[120,390]);return __test.state.homeTab==='library'}")
+        await check("slide_left_without_fade", """() => {
+          const motions=document.getAnimations().filter(a=>[mainScreen,searchHomeView,libraryHomeView].includes(a.effect?.target));
+          return motions.length>0&&motions.every(a=>{
+            const frames=a.effect.getKeyframes();
+            return frames.some(frame=>frame.transform&&frame.transform!=='none')&&frames.every(frame=>frame.opacity===undefined);
+          });
+        }""")
+        await check("swipe_compatibility_click_blocked", "() => {settingsButton.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,detail:1}));return __test.state.currentView==='home'}")
         await page.wait_for_timeout(450)
         await check("settings_inside_library", "!!document.querySelector('#libraryHomeView #settingsButton')")
-        await page.locator("#openSearchButton").focus()
-        await page.keyboard.press("Enter")
-        await check("keyboard_search_button", "__test.state.homeTab==='search'")
-        await page.wait_for_timeout(250)
-        await page.locator("#openLibraryButton").focus()
-        await page.keyboard.press("Enter")
-        await check("keyboard_library_button", "__test.state.homeTab==='library'")
-        await page.wait_for_timeout(250)
         if width == 393:
-            await page.locator("#openSearchButton").evaluate("e=>e.blur()")
             await page.screenshot(path=str(OUTPUT / f"pasha-library-{engine}-393.png"))
         await check("swipe_right_to_search", "() => {__touch(mainScreen,[90,390],[260,390]);return __test.state.homeTab==='search'}")
         await page.wait_for_timeout(450)
+        await check("slide_finishes_cleanly", """() => [mainScreen,searchHomeView,libraryHomeView].every(view=>{
+          const transform=getComputedStyle(view).transform;
+          return transform==='none'||new DOMMatrix(transform).isIdentity;
+        })""")
+        await check("rapid_reverse_swipe", "() => {__touch(mainScreen,[280,390],[100,390]);__touch(mainScreen,[90,390],[260,390]);return __test.state.homeTab==='search'}")
+        await page.wait_for_timeout(450)
+        await check("rapid_swipe_cleans_animation", "!document.getAnimations().some(a=>[mainScreen,searchHomeView,libraryHomeView].includes(a.effect?.target)&&a.playState==='running')")
+        await page.emulate_media(reduced_motion="reduce")
+        await check("reduced_motion_switches_without_animation", """() => {
+          __touch(mainScreen,[280,390],[100,390]);
+          return __test.state.homeTab==='library'&&!document.getAnimations().some(a=>[mainScreen,searchHomeView,libraryHomeView].includes(a.effect?.target)&&a.playState==='running');
+        }""")
+        await page.evaluate("__test.setHomeTab('search')")
+        await page.emulate_media(reduced_motion="no-preference")
         for name, target, start, end, options in [
             ("short_drag", "mainScreen", [200, 400], [180, 402], {}),
             ("vertical_drag", "mainScreen", [200, 450], [130, 230], {}),
@@ -153,6 +170,11 @@ async def scenario(browser, engine, width, height, paintable, safe_bottom):
         after = await page.evaluate(SNAPSHOT)
         result["checks"]["keyboard_geometry_stable"] = before == after
         result["keyboard"] = {"before": before, "after": after}
+        if width == 393:
+            await page.evaluate("h=>{searchInput.blur();__vv.height=h;visualViewport.dispatchEvent(new Event('resize'))}", paintable)
+            await page.wait_for_timeout(700)
+            await page.evaluate("data=>{Object.assign(__test.state,{searchTracks:data.tracks,searchAlbums:data.albums,searchActive:true});__test.renderSearchResults();mainScreen.scrollTop=0}", {"tracks": TRACKS, "albums": ALBUMS})
+            await page.screenshot(path=str(OUTPUT / f"pasha-search-edge-{engine}-393.png"))
         result["checks"]["no_page_errors"] = not result["pageErrors"]
     except Exception as error:
         result["fatal"] = str(error).splitlines()[0]
