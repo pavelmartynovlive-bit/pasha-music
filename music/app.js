@@ -92,11 +92,14 @@ let searchFocusAnchor = null;
 let searchFocusFrame = 0;
 let searchFocusTimer = 0;
 function settleSearchFocus() {
-  if (!searchFocusAnchor || document.activeElement !== elements.searchInput) return;
+  if (document.activeElement !== elements.searchInput) return;
   cancelAnimationFrame(searchFocusFrame);
   searchFocusFrame = requestAnimationFrame(() => {
-    if (!searchFocusAnchor || document.activeElement !== elements.searchInput) return;
-    elements.mainScreen.scrollTop = searchFocusAnchor.scrollTop;
+    if (document.activeElement !== elements.searchInput) return;
+    // Safari pans its visual viewport to reveal the focused field. Keep the
+    // fixed app at the same visible origin without moving the field itself.
+    document.body.style.top = `${window.visualViewport?.offsetTop || 0}px`;
+    if (searchFocusAnchor) elements.mainScreen.scrollTop = searchFocusAnchor.scrollTop;
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
   });
   clearTimeout(searchFocusTimer);
@@ -184,6 +187,7 @@ function mergeAlbumsFromTracks(tracks, persist = false) {
 
 function showPlayer(show = true) {
   if (show && !state.currentTrack) return;
+  if (show) elements.searchInput.blur();
   elements.fullPlayer.hidden = !show;
   document.body.classList.toggle("player-open", show);
 }
@@ -657,6 +661,7 @@ elements.searchInput.addEventListener("focus", () => {
 });
 elements.searchInput.addEventListener("blur", () => {
   searchFocusAnchor = null; clearTimeout(searchFocusTimer); cancelAnimationFrame(searchFocusFrame);
+  document.body.style.removeProperty("top");
 });
 window.visualViewport?.addEventListener("resize", settleSearchFocus);
 window.visualViewport?.addEventListener("scroll", settleSearchFocus);
