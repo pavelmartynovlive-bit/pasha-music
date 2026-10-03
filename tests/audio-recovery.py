@@ -220,8 +220,9 @@ async def install(page,strict=True):
         script=STRICT_MEDIA+(ROOT/'music/app.js').read_text()
     else:
         script=(ROOT/'music/app.js').read_text()
-    # Test wait timeouts are shortened, not production logic/event ordering.
-    script=script.replace(', 8000)', ', 350)').replace(', 10000)', ', 800)')
+    # Accelerate deterministic mocks only. Native decoding must keep the real
+    # grace period, particularly while the UI is decoding animated images.
+    if strict:script=script.replace(', 8000)', ', 350)').replace(', 10000)', ', 800)')
     script+='\nwindow.__test={state,resumePlayback,pausePlayback,playTrack,elements,agePendingPause:()=>{pendingMediaPause.started-=5000;pendingMediaPause.deadline-=5000}};\n'
     if strict:script+=COMMON
     await page.route('**/music/app.js*',lambda route:route.fulfill(status=200,content_type='text/javascript',body=script))

@@ -40,6 +40,19 @@ Optional environment variables:
 - `PASHAMUSIC_TEST_CASES`: comma-separated case names or glob patterns.
 - `PASHAMUSIC_TEST_REPO`: repository directory override; normally the script resolves the repository from its location under `tests/`.
 
-The tests intercept API calls and use local fixture tracks. They shorten only the routed JavaScript copy's 8000/10000 ms playback/network timeouts to 350/800 ms; production files are unchanged. The browser user agent is set to iOS 26.5 for the app's browser-specific paths. AudioSession state changes and system control actions are simulated.
+The tests intercept API calls and use local fixture tracks. Strict simulations shorten the routed JavaScript copy's 8000/10000 ms playback/network timeouts to 350/800 ms; native WAV checks keep production timeouts. Production files are unchanged. The browser user agent is set to iOS 26.5 for the app's browser-specific paths. AudioSession state changes and system control actions are simulated.
+
+## Home navigation and startup checks
+
+With the same test dependencies and local server, run:
+
+```sh
+python3 tests/home-navigation.py
+node tests/service-worker.cjs
+```
+
+The navigation checks cover both swipe directions, nested horizontal rails, vertical scrolling, keyboard geometry, settings navigation, and separate scroll positions for Search and My Music in WebKit and Chromium. Touch sequences and the keyboard viewport are simulated; these checks do not replace an iPhone check.
+
+Service-worker checks cover repeat asset loads, offline/slow navigation, cache updates, and bypassing authenticated/API requests. They run in Node without additional dependencies.
 
 These checks validate events, playback position, full element volume, and MediaSession commands in headless desktop WebKit/Chromium. They do not measure audible output or reproduce an actual iPhone's microphone ownership, audio routing, and Control Center. A physical iPhone should still be checked with an external voice-recording app, repeated capture/stop cycles, screen lock, manual Pause, remote Play/Next/Previous/seek, and the speaker/Bluetooth route that showed the original reduced-volume issue.

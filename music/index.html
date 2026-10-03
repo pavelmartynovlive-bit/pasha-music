@@ -42,7 +42,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Music" />
-  <link rel="stylesheet" href="../styles.css?v=62" />
+  <link rel="stylesheet" href="../styles.css?v=63" />
   <link rel="stylesheet" href="./artist.css?v=1" />
   <title>Pasha Music</title>
 </head>
@@ -56,8 +56,9 @@
     <section class="home-view search-home-view" id="searchHomeView">
       <div class="mascot-hero" aria-hidden="true">
         <div class="cat-mascot" id="catMascot" data-state="idle">
+          <img class="cat-mascot-image cat-mascot-poster" src="./assets/cat-poster.webp?v=1" alt="" width="720" height="720" decoding="async" fetchpriority="high" />
           <img class="cat-mascot-image cat-mascot-idle" src="./assets/cat-idle.webp?v=5" alt="" decoding="async" />
-          <img class="cat-mascot-image cat-mascot-playing" src="./assets/cat-playing.webp?v=6" alt="" decoding="async" />
+          <img class="cat-mascot-image cat-mascot-playing" data-src="./assets/cat-playing.webp?v=6" alt="" decoding="async" />
           <svg class="cat-mascot-svg" data-state="idle" viewBox="0 0 360 360" fill="none" xmlns="http://www.w3.org/2000/svg">
           <ellipse class="shadow" cx="180" cy="315" rx="88" ry="18"/>
           <g id="catLayers">
@@ -112,6 +113,10 @@
           <button class="search-clear" id="clearSearchButton" type="button" aria-label="Очистить поиск" hidden>×</button>
         </form>
 
+        <nav class="home-navigation" aria-label="Переход между экранами">
+          <button class="home-library-link" id="openLibraryButton" type="button">Моя музыка <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>
+        </nav>
+
         <div class="search-suggestions" id="searchSuggestions" aria-label="Поисковые подсказки" hidden></div>
 
         <section class="search-results" id="searchResults" aria-live="polite" hidden>
@@ -126,11 +131,14 @@
       </div>
     </section>
 
-    <div class="status" id="status" role="status">Подготовка…</div>
-
     <section class="home-view library-home-view" id="libraryHomeView" hidden>
+      <header class="library-topbar">
+        <button class="home-search-button" id="openSearchButton" type="button" aria-label="Вернуться к поиску"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button>
+        <h1>Моя музыка</h1>
+        <button class="library-settings-button" id="settingsButton" type="button" aria-label="Настройки"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-.5 2.5-2 1.2-2.4-.8-2.5 4.3 1.9 1.6v2.4l-1.9 1.6 2.5 4.3 2.4-.8 2 1.2L9 23h6l.5-2.5 2-1.2 2.4.8 2.5-4.3-1.9-1.6v-2.4l1.9-1.6-2.5-4.3-2.4.8-2-1.2L15 3Z" transform="translate(1.2 .3) scale(.9)"/><circle cx="12" cy="12" r="3"/></svg></button>
+      </header>
       <section class="personal-library">
-        <div class="section-title"><h2>Моя музыка</h2><span id="personalLibraryCount"></span></div>
+        <p class="library-count" id="personalLibraryCount"></p>
         <nav class="library-switcher" id="librarySwitcher" aria-label="Моя музыка">
           <button class="library-switch active" type="button" data-library-view="tracks">Треки</button>
           <button class="library-switch" type="button" data-library-view="albums">Альбомы</button>
@@ -146,6 +154,8 @@
         <div class="track-list" id="trackList"></div>
       </section>
     </section>
+
+    <div class="status" id="status" role="status">Подготовка…</div>
 
   </main>
 
@@ -276,18 +286,7 @@
       <button id="actionSheetCloseButton" type="button">Отмена</button>
     </div>
   </section>
-    <footer class="bottom-bar" id="bottomBar">
-      <nav class="compact-tabs" id="homeTabs" aria-label="Главные разделы">
-        <button class="compact-tab active" type="button" data-home-tab="search" aria-label="Поиск" aria-selected="true">
-          <svg class="bottom-bar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg>
-        </button>
-        <button class="compact-tab" type="button" data-home-tab="library" aria-label="Моя музыка" aria-selected="false">
-          <svg class="bottom-bar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.5 4.5a5.3 5.3 0 0 0-7.5 0L12 5.6l-1-1.1a5.3 5.3 0 0 0-7.5 7.5L12 20.5l8.5-8.5a5.3 5.3 0 0 0 0-7.5Z"/></svg>
-        </button>
-      </nav>
-      <button class="icon-button" id="settingsButton" type="button" aria-label="Настройки подключения"><svg class="bottom-bar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.5 3h5l.6 2.7 2.1 1.2 2.6-.8 2.5 4.3-2 1.9v2.4l2 1.9-2.5 4.3-2.6-.8-2.1 1.2-.6 2.7h-5l-.6-2.7-2.1-1.2-2.6.8-2.5-4.3 2-1.9v-2.4l-2-1.9L4.3 6l2.6.8L9 5.7Z" transform="translate(0 -1.5) scale(1 .95)"/><circle cx="12" cy="12" r="3"/></svg></button>
-    </footer>
   <audio id="audio" preload="metadata" playsinline></audio>
-  <script type="module" src="./app.js?v=59"></script>
+  <script type="module" src="./app.js?v=60"></script>
 </body>
 </html>

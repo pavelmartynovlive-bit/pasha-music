@@ -18,7 +18,7 @@ const elementIds = [
   "collectionArtist", "collectionBackButton", "collectionCover", "collectionKind", "collectionKicker", "collectionMeta",
   "collectionMixButton", "collectionPlayButton", "collectionScreen", "collectionShuffleButton", "collectionTitle", "collectionTrackList",
   "coverFallback", "coverImage", "currentTime", "duration", "fullPlayer", "libraryAlbumList", "libraryPlaylistList",
-  "bottomBar", "homeTabs", "libraryHomeView", "librarySwitcher", "mainScreen", "miniCoverFallback", "miniCoverImage", "miniMixButton", "miniNextButton", "miniPlayButton", "miniPlayer",
+  "openLibraryButton", "openSearchButton", "libraryHomeView", "librarySwitcher", "mainScreen", "miniCoverFallback", "miniCoverImage", "miniMixButton", "miniNextButton", "miniPlayButton", "miniPlayer",
   "miniProgress", "miniTrackArtist", "miniTrackTitle", "nextButton", "openPlayerButton", "personalLibraryCount", "playButton",
   "playerMixButton", "playerLikeButton", "playerLikeLabel", "playerLibraryStatus", "libraryTracksSection", "previousButton", "searchAlbumGroup", "searchAlbumList", "searchForm", "searchInput", "searchFocusPreview",
   "searchResultList", "searchResults", "searchSuggestions", "searchTrackGroup", "sectionTabs", "sectionTitle",
@@ -31,6 +31,31 @@ const elements = Object.fromEntries(elementIds.map((id) => [id, document.getElem
 class CatMascot {
   constructor(element) {
     this.element = element;
+    this.images = {
+      idle: element.querySelector(".cat-mascot-idle"),
+      playing: element.querySelector(".cat-mascot-playing"),
+    };
+    for (const image of Object.values(this.images)) {
+      image.dataset.ready = String(image.complete && image.naturalWidth > 0);
+      image.dataset.failed = String(Boolean(image.getAttribute("src")) && image.complete && !image.naturalWidth);
+      image.addEventListener("load", () => { image.dataset.ready = "true"; image.dataset.failed = "false"; this.update(); });
+      image.addEventListener("error", () => { image.dataset.ready = "false"; image.dataset.failed = "true"; this.update(); });
+    }
+    // Keep a small first frame visible until the animation has downloaded and
+    // decoded. A failed image stays hidden instead of Safari's blue '?' icon.
+    const poster = element.querySelector(".cat-mascot-poster");
+    poster.dataset.ready = String(poster.complete && poster.naturalWidth > 0);
+    poster.addEventListener("load", () => { poster.dataset.ready = "true"; });
+    poster.addEventListener("error", () => { poster.dataset.ready = "false"; });
+    this.retryFailed = () => {
+      if (document.hidden || navigator.onLine === false) return;
+      const image = this.images[this._isPlaying ? "playing" : "idle"];
+      if (image.dataset.failed !== "true") return;
+      image.dataset.failed = "false";
+      image.src = image.dataset.src || image.src;
+    };
+    window.addEventListener("online", this.retryFailed);
+    document.addEventListener("visibilitychange", this.retryFailed);
     this.isPlaying = false;
   }
 
@@ -38,8 +63,16 @@ class CatMascot {
 
   set isPlaying(value) {
     this._isPlaying = Boolean(value);
+    const image = this.images[this._isPlaying ? "playing" : "idle"];
+    if (!image.getAttribute("src") && image.dataset.src) image.src = image.dataset.src;
+    this.update();
+    this.retryFailed();
+  }
+
+  update() {
     const stateName = this._isPlaying ? "playing" : "idle";
     this.element.dataset.state = stateName;
+    this.element.dataset.animationReady = this.images[stateName].dataset.ready;
   }
 }
 
@@ -96,7 +129,9 @@ function setSettingsStatus(message, isError = false) {
 }
 function reportConnectionError(error) {
   let message = error.message || "Не удалось подключиться к музыке.";
-  if (error.name === "TypeError" || /load failed|failed to fetch|networkerror/i.test(message)) {
+  if (error.name === "AbortError" || error.name === "TimeoutError") {
+    message = "Сервер отвечает слишком долго. Попробуйте ещё раз через настройки.";
+  } else if (error.name === "TypeError" || /load failed|failed to fetch|networkerror/i.test(message)) {
     message = "Не удалось подключиться к музыке. Попробуйте позже или проверьте настройки.";
   } else if (/cookies|backend/i.test(message)) {
     message = "Не удалось подключиться к музыке. Проверьте настройки подключения.";
@@ -198,14 +233,6 @@ function calibrateBottomInset() {
   if (document.documentElement.style.getPropertyValue("--viewport-bottom-inset") !== value) {
     document.documentElement.style.setProperty("--viewport-bottom-inset", value);
   }
-  // The physical screen can extend below the paintable WebKit viewport.
-  // Background color can fill that strip, but buttons cannot: keep their
-  // entire hit area above the closed-keyboard visual viewport boundary.
-  // Freeze this clearance while the keyboard is open so navigation stays put.
-  const clipValue = value;
-  if (document.documentElement.style.getPropertyValue("--bottom-bar-clip-inset") !== clipValue) {
-    document.documentElement.style.setProperty("--bottom-bar-clip-inset", clipValue);
-  }
 }
 function scheduleBottomInset() {
   clearTimeout(bottomInsetTimer);
@@ -297,20 +324,92 @@ function showPlayer(show = true) {
   elements.fullPlayer.hidden = !show;
   document.body.classList.toggle("player-open", show);
 }
-function setHomeTab(tab) {
-  state.homeTab = tab === "library" ? "library" : "search";
+const homeScroll = { search: 0, library: 0 };
+let homeTransition = null;
+function setHomeTab(tab, animate = false) {
+  const next = tab === "library" ? "library" : "search";
+  const changed = state.homeTab !== next;
+  const moveFocus = document.activeElement === elements.openLibraryButton || document.activeElement === elements.openSearchButton;
+  if (changed) {
+    if (!elements.mainScreen.hidden) homeScroll[state.homeTab] = elements.mainScreen.scrollTop;
+    elements.searchInput.blur();
+    finishSearchFocus();
+  }
+  homeTransition?.cancel();
+  state.homeTab = next;
   const showingSearch = state.homeTab === "search";
   elements.searchHomeView.hidden = !showingSearch;
   elements.libraryHomeView.hidden = showingSearch;
-  elements.homeTabs.querySelectorAll("[data-home-tab]").forEach((button) => {
-    const active = button.dataset.homeTab === state.homeTab;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-selected", String(active));
-  });
-  elements.mainScreen.scrollTo({ top: 0, behavior: "auto" });
-  elements.collectionScreen.scrollTo({ top: 0, behavior: "auto" });
-  elements.artistScreen.scrollTo({ top: 0, behavior: "auto" });
+  if (changed) elements.mainScreen.scrollTop = homeScroll[next];
+  if (changed && moveFocus) (showingSearch ? elements.openLibraryButton : elements.openSearchButton).focus({ preventScroll: true });
+  if (changed && animate && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const view = showingSearch ? elements.searchHomeView : elements.libraryHomeView;
+    homeTransition = view.animate([
+      { transform: `translateX(${showingSearch ? -40 : 40}px)`, opacity: .4 },
+      { transform: "translateX(0)", opacity: 1 },
+    ], { duration: 220, easing: "cubic-bezier(.2,.7,.2,1)" });
+  }
 }
+
+// Keep vertical scrolling and nested album/result rails native. Only claim a
+// clearly horizontal, single-finger gesture on one of the two home screens.
+let homeSwipe = null;
+let suppressHomeClickUntil = 0;
+function canSwipeHome() {
+  return state.currentView === "home" && elements.fullPlayer.hidden && elements.trackActionSheet.hidden;
+}
+function isSwipeControl(target) {
+  if (!(target instanceof Element)) return true;
+  if (target.closest("input, textarea, select, [contenteditable], [data-no-home-swipe], .album-grid, .search-result-list, .section-tabs, .library-switcher")) return true;
+  for (let parent = target; parent && parent !== elements.mainScreen; parent = parent.parentElement) {
+    if (parent.scrollWidth > parent.clientWidth + 2 && /auto|scroll/.test(getComputedStyle(parent).overflowX)) return true;
+  }
+  return false;
+}
+elements.mainScreen.addEventListener("touchstart", (event) => {
+  homeSwipe = null;
+  if (!canSwipeHome() || event.touches.length !== 1 || isSwipeControl(event.target)) return;
+  const touch = event.touches[0];
+  // Leave Safari's history gesture at the browser edges; installed PWA has
+  // no browser navigation there and can use the entire screen.
+  if (!isStandalone && (touch.clientX < 24 || touch.clientX > innerWidth - 24)) return;
+  homeSwipe = { id: touch.identifier, x: touch.clientX, y: touch.clientY, tab: state.homeTab, axis: null };
+}, { passive: true });
+elements.mainScreen.addEventListener("touchmove", (event) => {
+  if (!homeSwipe) return;
+  if (!canSwipeHome() || event.touches.length !== 1 || state.homeTab !== homeSwipe.tab) { homeSwipe = null; return; }
+  const touch = event.touches[0];
+  if (touch.identifier !== homeSwipe.id) { homeSwipe = null; return; }
+  const dx = touch.clientX - homeSwipe.x;
+  const dy = touch.clientY - homeSwipe.y;
+  if (!homeSwipe.axis && Math.max(Math.abs(dx), Math.abs(dy)) >= 12) {
+    homeSwipe.axis = Math.abs(dx) > Math.abs(dy) * 1.5 ? "horizontal" : "vertical";
+  }
+  if (homeSwipe.axis === "vertical") { homeSwipe = null; return; }
+  const towardsNext = homeSwipe.tab === "search" ? dx < 0 : dx > 0;
+  if (homeSwipe.axis === "horizontal" && towardsNext && event.cancelable) event.preventDefault();
+}, { passive: false });
+elements.mainScreen.addEventListener("touchend", (event) => {
+  const swipe = homeSwipe;
+  homeSwipe = null;
+  if (!swipe || !canSwipeHome() || event.touches.length || state.homeTab !== swipe.tab) return;
+  const touch = [...event.changedTouches].find((item) => item.identifier === swipe.id);
+  if (!touch) return;
+  const dx = touch.clientX - swipe.x;
+  const dy = touch.clientY - swipe.y;
+  const towardsNext = swipe.tab === "search" ? dx < 0 : dx > 0;
+  const threshold = Math.max(60, elements.mainScreen.clientWidth * .18);
+  if (swipe.axis !== "horizontal" || !towardsNext || Math.abs(dx) < threshold || Math.abs(dx) <= Math.abs(dy) * 1.5) return;
+  if (event.cancelable) event.preventDefault();
+  suppressHomeClickUntil = performance.now() + 400;
+  setHomeTab(swipe.tab === "search" ? "library" : "search", true);
+}, { passive: false });
+elements.mainScreen.addEventListener("touchcancel", () => { homeSwipe = null; }, { passive: true });
+elements.mainScreen.addEventListener("click", (event) => {
+  if (event.detail !== 0 && performance.now() < suppressHomeClickUntil) {
+    event.preventDefault(); event.stopImmediatePropagation();
+  }
+}, { capture: true });
 const navigationStack = [];
 function showView(view, collection = null, remember = true) {
   if (remember && view !== "home") {
@@ -329,8 +428,6 @@ function showView(view, collection = null, remember = true) {
   elements.collectionScreen.hidden = view !== "album" && view !== "playlist";
   elements.artistScreen.hidden = view !== "artist";
   elements.settingsScreen.hidden = view !== "settings";
-  elements.homeTabs.hidden = view !== "home";
-  elements.bottomBar.hidden = view !== "home";
   document.body.classList.toggle("detail-open", view !== "home");
   elements.mainScreen.scrollTo({ top: 0, behavior: "auto" });
   elements.collectionScreen.scrollTo({ top: 0, behavior: "auto" });
@@ -543,16 +640,24 @@ function scheduleSuggestions() {
   if (query.length < 2) { state.suggestionRequestId += 1; renderSuggestions([]); return; }
   renderSuggestions(localSuggestions(query)); state.suggestionTimer = setTimeout(() => loadSuggestions(query), SUGGESTION_DELAY);
 }
-async function loadSection(sectionId) {
+async function loadSection(sectionId, { preserveSearch = false, signal } = {}) {
   if (!sectionId) return true;
+  const canUpdateStatus = () => !preserveSearch || (!state.searchActive && !elements.searchInput.value.trim());
   try {
-    state.currentSectionId = sectionId; clearSearch(true); renderSections(); setStatus("Загружаю треки…");
-    const data = await api(`/api/sections/${encodeURIComponent(sectionId)}`);
+    state.currentSectionId = sectionId;
+    if (!preserveSearch) clearSearch(true);
+    renderSections();
+    if (canUpdateStatus()) setStatus("Загружаю треки…");
+    const data = await api(`/api/sections/${encodeURIComponent(sectionId)}`, signal);
     state.libraryTracks = data.result.tracks || []; elements.sectionTitle.textContent = data.result.title || "Треки";
     mergeAlbumsFromTracks(state.libraryTracks, true); renderLibraryTracks(); renderPersonalLibrary();
-    setStatus(state.libraryTracks.length ? "" : "Раздел пуст");
+    if (canUpdateStatus()) setStatus(state.libraryTracks.length ? "" : "Раздел пуст");
     return true;
-  } catch (error) { reportConnectionError(error); return false; }
+  } catch (error) {
+    if (canUpdateStatus()) reportConnectionError(error);
+    else setSettingsStatus("Не удалось загрузить мою музыку. Попробуйте подключиться ещё раз.", true);
+    return false;
+  }
 }
 async function searchMusic(query) {
   const normalizedQuery = query.trim(); if (normalizedQuery.length < 2) return setStatus("Введите минимум два символа для поиска", true);
@@ -576,14 +681,22 @@ function clearSearch(clearInput = true) {
   if (clearInput && elements.audio.paused) setStatus("");
 }
 async function loadLibrary() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
   try {
-    setStatus("Подключаюсь к VK Music…"); const health = await api("/api/health");
-    if (!health.hasCookieP || !health.hasRemixSid) throw new Error("На backend не настроены VK cookies");
-    const data = await api("/api/sections"); state.sections = data.result.sections || []; renderSections();
+    setStatus("Подключаюсь к VK Music…");
+    const [, data] = await Promise.all([
+      api("/api/health", controller.signal).then((health) => {
+        if (!health.hasCookieP || !health.hasRemixSid) throw new Error("На backend не настроены VK cookies");
+      }),
+      api("/api/sections", controller.signal),
+    ]);
+    state.sections = data.result.sections || []; renderSections();
     const sectionId = data.result.defaultSection || state.sections[0]?.id;
     if (!sectionId) { setStatus(""); return true; }
-    return await loadSection(sectionId);
-  } catch (error) { reportConnectionError(error); return false; }
+    return await loadSection(sectionId, { preserveSearch: true, signal: controller.signal });
+  } catch (error) { controller.abort(); reportConnectionError(error); return false; }
+  finally { clearTimeout(timer); }
 }
 
 function renderCollectionArtwork(collection) {
@@ -1194,7 +1307,8 @@ elements.playbackDiagnosticsButton.addEventListener("click", async () => {
   elements.playbackDiagnosticsStatus.hidden = false;
 });
 elements.closeSetupButton.addEventListener("click", () => { void goBack(); });
-elements.homeTabs.addEventListener("click", (event) => { const button = event.target.closest("[data-home-tab]"); if (button) { setHomeTab(button.dataset.homeTab); if (state.homeTab === "search") focusSearchInput(true); } });
+elements.openLibraryButton.addEventListener("click", () => setHomeTab("library", true));
+elements.openSearchButton.addEventListener("click", () => setHomeTab("search", true));
 elements.searchForm.addEventListener("submit", (event) => { event.preventDefault(); searchMusic(elements.searchInput.value); elements.searchInput.blur(); });
 elements.searchInput.addEventListener("input", () => { updateSearchFocusPreview(); scheduleSuggestions(); });
 elements.searchInput.addEventListener("pointerdown", (event) => {
