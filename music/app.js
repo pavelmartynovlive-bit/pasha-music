@@ -405,14 +405,18 @@ function renderCollection() {
   if (!tracks.length) elements.collectionTrackList.append(Object.assign(document.createElement("div"), { className: "empty", textContent: "Загружаю треки…" }));
 }
 async function openAlbum(album) {
-  showView("album", { ...album, tracks: album.tracks || [] }); renderCollection();
+  showView("album", { ...album, tracks: [] }); renderCollection();
+  elements.collectionTrackList.replaceChildren(Object.assign(document.createElement("div"), { className: "empty", textContent: "Загрузка трек-листа…" }));
   try {
     const path = `/api/albums/${encodeURIComponent(album.ownerId)}/${encodeURIComponent(album.id)}?title=${encodeURIComponent(album.title)}&artist=${encodeURIComponent(album.artist?.name || "")}`;
-    const data = await api(path); state.currentCollection = data.result.album;
+    const data = await api(path);
+    if (state.currentView !== "album" || albumKey(state.currentCollection) !== albumKey(album)) return;
+    state.currentCollection = data.result.album;
     const existingIndex = state.library.albums.findIndex((item) => albumKey(item) === albumKey(state.currentCollection));
     if (existingIndex >= 0) { state.library.albums[existingIndex] = state.currentCollection; saveLibrary(); renderPersonalLibrary(); }
     renderCollection();
   } catch (error) {
+    if (state.currentView !== "album" || albumKey(state.currentCollection) !== albumKey(album)) return;
     if (!state.currentCollection.tracks?.length) elements.collectionTrackList.replaceChildren(Object.assign(document.createElement("div"), { className: "empty error", textContent: error.message }));
   }
 }
@@ -463,9 +467,9 @@ async function createAndOpenMix(source) {
   setStatus("Создаю микс…");
   try {
     const playlist = await generateMix(source); if (!playlist.tracks.length) throw new Error("Не удалось подобрать похожие треки");
-    state.library.playlists.unshift(playlist); saveLibrary(); renderPersonalLibrary(); showPlayer(false); closeTrackActions(); openPlaylist(playlist);
-    setStatus("Микс сохранён в Моей музыке");
-  } catch (error) { setStatus(error.message, true); if (state.currentView !== "home") showView("home"); }
+    state.library.playlists.unshift(playlist); saveLibrary(); renderPersonalLibrary(); closeTrackActions();
+    await playTrack(playlist.tracks[0], playlist.tracks);
+  } catch (error) { setStatus(error.message, true); }
 }
 
 let playbackWanted = false;

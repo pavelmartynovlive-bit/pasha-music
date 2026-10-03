@@ -320,27 +320,29 @@ function albumsFromTracks(tracks, limit = 12) {
   return [...albums.values()].slice(0, limit);
 }
 
-async function findAlbumTracks(vk, { ownerId, albumId, title, artist }) {
-  const query = [artist, title].filter(Boolean).join(" ").trim() || title;
+async function findAlbumTracks(vk, { ownerId, albumId }) {
   const collected = [];
   const seen = new Set();
-
-  for (const offset of [0, 100, 200]) {
-    const result = await vk.searchAudio(query, offset);
-    for (const track of result.audios) {
-      if (
-        String(track.album?.id) !== String(albumId) ||
-        String(track.album?.ownerId) !== String(ownerId)
-      ) continue;
-      const key = `${track.ownerId}_${track.id}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        collected.push(track);
-      }
+  let offset = 0;
+  while (true) {
+    const response = await vk.request("audio.get", new URLSearchParams({
+      owner_id: String(ownerId), album_id: String(albumId),
+      count: "1000", offset: String(offset),
+    }));
+    if (!response.success) throw response.error;
+    const result = response.data?.response;
+    if (!Array.isArray(result?.items) || !Number.isInteger(result.count) || result.count < 0) {
+      throw new Error("VK вернул некорректный трек-лист альбома");
     }
-    if (!result.audios.length || collected.length >= result.count) break;
+    let added = 0;
+    for (const raw of result.items) {
+      const key = `${raw.owner_id}_${raw.id}`;
+      if (!seen.has(key)) { seen.add(key); collected.push(getAudioItem(raw)); added += 1; }
+    }
+    offset += result.items.length;
+    if (offset >= result.count) break;
+    if (!result.items.length || !added) throw new Error("VK не вернул полный трек-лист альбома");
   }
-
   return collected;
 }
 
@@ -544,12 +546,19 @@ app.get("/api/albums/:ownerId/:albumId", async (req, res) => {
       })
     );
 
-    const [album] = albumsFromTracks(tracks, 1);
-    if (!album) {
+    const matchingAlbum = albumsFromTracks(tracks).find((item) =>
+      String(item.ownerId) === req.params.ownerId && String(item.id) === req.params.albumId
+    );
+    if (!tracks.length) {
       return res.status(404).json({ ok: false, error: "Не удалось загрузить треки этого альбома" });
     }
 
-    res.json({ ok: true, result: { album: { ...album, trackCount: tracks.length, tracks } } });
+    res.json({ ok: true, result: { album: {
+      ...matchingAlbum, id: req.params.albumId, ownerId: req.params.ownerId,
+      title: matchingAlbum?.title || title, artist: matchingAlbum?.artist || { name: artist },
+      artwork: matchingAlbum?.artwork || tracks[0]?.thumbnail || {},
+      trackCount: tracks.length, tracks,
+    } } });
   } catch (error) {
     sendVkError(res, error, "VK getAlbum");
   }
