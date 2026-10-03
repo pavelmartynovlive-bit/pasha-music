@@ -20,7 +20,7 @@ const elementIds = [
   "coverFallback", "coverImage", "currentTime", "duration", "fullPlayer", "libraryAlbumList", "libraryPlaylistList",
   "bottomBar", "homeTabs", "libraryHomeView", "librarySwitcher", "mainScreen", "miniCoverFallback", "miniCoverImage", "miniMixButton", "miniNextButton", "miniPlayButton", "miniPlayer",
   "miniProgress", "miniTrackArtist", "miniTrackTitle", "nextButton", "openPlayerButton", "personalLibraryCount", "playButton",
-  "playerMixButton", "playerLikeButton", "playerLikeLabel", "libraryLikedList", "previousButton", "searchAlbumGroup", "searchAlbumList", "searchForm", "searchInput", "searchFocusPreview",
+  "playerMixButton", "playerLikeButton", "playerLikeLabel", "playerLibraryStatus", "libraryTracksSection", "previousButton", "searchAlbumGroup", "searchAlbumList", "searchForm", "searchInput", "searchFocusPreview",
   "searchResultList", "searchResults", "searchSuggestions", "searchTrackGroup", "sectionTabs", "sectionTitle",
   "searchHomeView", "seek", "settingsButton", "settingsScreen", "settingsStatus", "setupForm", "status", "trackActionSheet", "trackArtist", "trackCount", "trackLabel",
   "trackList", "trackTitle", "trackAlbum", "trackAlbumSeparator",
@@ -61,7 +61,7 @@ function normalizeStoredLibrary(raw = {}) {
 const state = {
   config: readJson(CONNECTION_STORAGE_KEY, {}),
   library: normalizeStoredLibrary(readJson(LIBRARY_STORAGE_KEY, {})),
-  sections: [], currentSectionId: null, libraryTracks: [], libraryView: "albums",
+  sections: [], currentSectionId: null, libraryTracks: [], libraryView: "tracks",
   searchTracks: [], searchAlbums: [], searchTotal: 0, searchQuery: "", searchActive: false,
   playbackQueue: [], currentTrackKey: null, currentTrack: null,
   currentView: "home", homeTab: "search", currentCollection: null, actionTrack: null,
@@ -79,7 +79,16 @@ function setStatus(message, isError = false) {
   elements.status.hidden = !message;
   elements.status.classList.toggle("error", isError);
 }
-function saveLibrary() { localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(state.library)); }
+function saveLibrary(library = state.library) {
+  try { localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(library)); }
+  catch (error) {
+    if (error.name !== "QuotaExceededError") throw error;
+    // Album contents are fetched again when opened. Evict this replaceable
+    // cache before refusing to save the user's tracks or playlists.
+    const compact = { ...library, albums: library.albums.map((album) => ({ ...album, tracks: [] })) };
+    localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(compact));
+  }
+}
 function setSettingsStatus(message, isError = false) {
   elements.settingsStatus.textContent = message;
   elements.settingsStatus.hidden = !message;
@@ -193,7 +202,9 @@ function calibrateBottomInset() {
   // report a shorter height even when that strip still paints on screen.
   const screenHeight = window.matchMedia("(orientation: landscape)").matches
     ? Math.min(window.screen.width, window.screen.height) : window.screen.height;
-  const paintedHeight = Math.min(window.innerHeight, screenHeight || window.innerHeight);
+  // innerHeight can underreport the same strip as visualViewport even though
+  // it is painted. A viewport-fit=cover standalone app fills the screen.
+  const paintedHeight = screenHeight || window.innerHeight;
   const clip = Math.min(deficit, Math.max(0, document.body.clientHeight - paintedHeight));
   const clipValue = `${Math.ceil(clip)}px`;
   if (document.documentElement.style.getPropertyValue("--bottom-bar-clip-inset") !== clipValue) {
@@ -437,28 +448,27 @@ function renderSections() {
   }));
 }
 function renderLibraryTracks() {
-  elements.trackCount.textContent = `${state.libraryTracks.length} треков`;
-  if (!state.libraryTracks.length) {
-    elements.trackList.replaceChildren(Object.assign(document.createElement("div"), { className: "empty", textContent: "В этом разделе пока нет доступных треков." })); return;
+  const tracks = [...new Map([...state.library.likedTracks, ...state.libraryTracks].map((track) => [trackKey(track), track])).values()];
+  elements.trackCount.textContent = `${tracks.length} треков`;
+  if (!tracks.length) {
+    elements.trackList.replaceChildren(Object.assign(document.createElement("div"), { className: "empty", textContent: "Добавляйте песни в свою музыку кнопкой с сердечком в плеере." })); return;
   }
-  elements.trackList.replaceChildren(...state.libraryTracks.map((track) => createTrackRow(track, state.libraryTracks)));
+  elements.trackList.replaceChildren(...tracks.map((track) => createTrackRow(track, tracks)));
 }
 function renderPersonalLibrary() {
   const showingAlbums = state.libraryView === "albums";
-  const showingLikes = state.libraryView === "likes";
+  const showingTracks = state.libraryView === "tracks";
   elements.libraryAlbumList.hidden = !showingAlbums;
   elements.libraryPlaylistList.hidden = state.libraryView !== "playlists";
-  elements.libraryLikedList.hidden = !showingLikes;
+  elements.libraryTracksSection.hidden = !showingTracks;
   elements.librarySwitcher.querySelectorAll("[data-library-view]").forEach((button) => button.classList.toggle("active", button.dataset.libraryView === state.libraryView));
   if (showingAlbums) {
     elements.personalLibraryCount.textContent = `${state.library.albums.length} альбомов`;
     elements.libraryAlbumList.replaceChildren(...state.library.albums.map(createAlbumCard));
     if (!state.library.albums.length) elements.libraryAlbumList.append(Object.assign(document.createElement("div"), { className: "empty library-empty", textContent: "Альбомы из вашей музыки появятся здесь." }));
-  } else if (showingLikes) {
-    const tracks = state.library.likedTracks;
-    elements.personalLibraryCount.textContent = `${tracks.length} треков`;
-    elements.libraryLikedList.replaceChildren(...tracks.map((track) => createTrackRow(track, tracks)));
-    if (!tracks.length) elements.libraryLikedList.append(Object.assign(document.createElement("div"), { className: "empty library-empty", textContent: "Понравившиеся треки появятся здесь. Нажмите сердечко в плеере." }));
+  } else if (showingTracks) {
+    elements.personalLibraryCount.textContent = "";
+    renderLibraryTracks();
   } else {
     elements.personalLibraryCount.textContent = `${state.library.playlists.length} плейлистов`;
     elements.libraryPlaylistList.replaceChildren(...state.library.playlists.map(createPlaylistCard));
@@ -469,15 +479,30 @@ function renderTrackLike() {
   const liked = Boolean(state.currentTrackKey && state.library.likedTracks.some((track) => trackKey(track) === state.currentTrackKey));
   elements.playerLikeButton.disabled = !state.currentTrack;
   elements.playerLikeButton.setAttribute("aria-pressed", String(liked));
-  elements.playerLikeButton.setAttribute("aria-label", liked ? "Убрать трек из любимого" : "Добавить трек в любимое");
-  elements.playerLikeLabel.textContent = liked ? "Залайкано" : "Залайкать";
+  elements.playerLikeButton.setAttribute("aria-label", liked ? "Убрать из моей музыки" : "Добавить в мою музыку");
+  elements.playerLikeLabel.textContent = liked ? "В моей музыке" : "Добавить в мою музыку";
 }
 function toggleTrackLike() {
   if (!state.currentTrack) return;
   const index = state.library.likedTracks.findIndex((track) => trackKey(track) === state.currentTrackKey);
-  if (index < 0) state.library.likedTracks.unshift({ ...state.currentTrack });
-  else state.library.likedTracks.splice(index, 1);
-  saveLibrary(); renderTrackLike(); renderPersonalLibrary();
+  const likedTracks = [...state.library.likedTracks];
+  if (index < 0) likedTracks.unshift({ ...state.currentTrack });
+  else likedTracks.splice(index, 1);
+  const library = { ...state.library, likedTracks };
+  try {
+    saveLibrary(library);
+    state.library = library;
+    state.libraryView = "tracks";
+    renderTrackLike(); renderPersonalLibrary();
+    elements.playerLibraryStatus.textContent = index < 0 ? "Добавлено в мою музыку" : "Удалено из моей музыки";
+    elements.playerLibraryStatus.classList.remove("error");
+  } catch (error) {
+    elements.playerLibraryStatus.textContent = error.name === "QuotaExceededError"
+      ? "Не удалось сохранить: хранилище устройства заполнено."
+      : "Не удалось сохранить трек. Проверьте доступ к хранилищу браузера.";
+    elements.playerLibraryStatus.classList.add("error");
+  }
+  elements.playerLibraryStatus.hidden = false;
 }
 function renderSearchResults() {
   elements.searchResults.hidden = !state.searchActive;
@@ -866,6 +891,7 @@ async function playTrack(track, queue) {
   elements.coverImage.hidden = !artwork; elements.coverFallback.hidden = Boolean(artwork); elements.miniCoverImage.hidden = !artwork; elements.miniCoverFallback.hidden = Boolean(artwork);
   if (artwork) { elements.coverImage.src = artwork; elements.miniCoverImage.src = artwork; }
   renderLibraryTracks(); renderSearchResults(); if (state.currentCollection) renderCollection();
+  elements.playerLibraryStatus.hidden = true;
   renderTrackLike();
   if ("mediaSession" in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: track.title, artist: track.artist, album: track.album?.title || "VK Music", artwork: artwork ? [{ src: artwork }] : [] });
   if (await resumePlayback()) setStatus("Воспроизведение");
