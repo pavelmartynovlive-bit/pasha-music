@@ -10,9 +10,10 @@
 body{margin:0;background:#101827;color:#eef2ff;font:17px system-ui;line-height:1.5}main{max-width:650px;margin:auto;padding:24px 18px 60px}h1{font-size:25px}h2{font-size:20px}label{display:block;margin-top:18px}select,button,textarea{font:inherit;padding:12px;border-radius:10px;border:1px solid #718096;box-sizing:border-box}select,textarea,audio{width:100%}button{background:#dce8ff;color:#101827;margin:8px 5px 8px 0}button:disabled{opacity:.5}a{color:#abcaff}small{display:block;color:#bfcae0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;background:#182338;padding:12px;border-radius:10px}textarea{background:#182338;color:white;height:130px}#status{min-height:3em}ol{padding-left:24px}details{margin-top:20px}
 </style>
 <main>
-<h1>Проверка аудио iOS · 1</h1>
+<h1>Проверка аудио iOS · 3</h1>
 <p>Здесь один плеер без автоматического восстановления. Проверяем, что происходит с буфером после паузы и микрофона.</p>
 <small id="environment"></small>
+<p><a href="default-session.html">Новая проверка: категория аудиосессии по умолчанию</a></p>
 <p><a href="session-reset.html">Эксперимент: восстановление категории аудиосессии</a></p>
 <label>Источник<select id="source"><option value="hls">Тестовый HLS · 3 минуты</option><option value="file">Тот же звук в M4A · 3 минуты</option><option value="current">Текущий HLS из музыкальной библиотеки</option></select></label>
 <label>Управление<select id="mode"><option value="native">Штатный плеер браузера</option><option value="session">Простые команды Media Session</option></select></label>
@@ -33,5 +34,5 @@ body{margin:0;background:#101827;color:#eef2ff;font:17px system-ui;line-height:1
 <details><summary>Что записывается</summary><p>Позиция, буфер, события плеера, видимость страницы и результат проверки на слух. Ссылки на треки, ключ подключения и названия треков в отчёт не попадают. Нативные HTTP-запросы HLS могут быть недоступны странице; для них нужен Web Inspector или системная трасса.</p></details>
 <p><a href="../">Вернуться к музыке</a></p>
 </main>
-<script src="check.js?v=1" defer></script>
+<script src="check.js?v=3" defer></script>
 </html>

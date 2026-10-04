@@ -72,3 +72,15 @@ Interpretation:
 These are experiment directions, not guarantees. Desktop Chromium can validate
 M4A loading and the diagnostic page. Linux WebKit in this workspace lacks the
 needed AAC/HLS support and cannot validate iPhone AVFoundation or Control Center.
+
+## Default category experiment
+
+`default-session.html` never writes AudioSession.type and forces native controls
+without MediaSession handlers. Its separate `default-session.webmanifest` starts
+this document directly as Audio Default, avoiding an initial visit to the
+playback-setting baseline. Stop other players before testing. Report version 3
+records `experiment=default-audio-session`, `sessionTypePolicy=untouched`, the
+initial category and observed category on every event. Do not reset the category
+to auto: that would introduce a second intervention. Compare the same M4A in
+standalone mode with the previous explicit-playback trial. No recovery actions
+are added. Physical iPhone results are required to evaluate this hypothesis.
