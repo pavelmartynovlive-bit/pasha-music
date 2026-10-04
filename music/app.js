@@ -864,9 +864,14 @@ let recentMediaPause = null;
 let mediaPauseTimer = 0;
 let playbackWatchdog = 0;
 let watchdogRepairs = 0;
+let playbackClockWatch = null;
+let backgroundWakeAttempts = 0;
+let playbackClockStalled = false;
 let pendingAudioReplacement = null;
 let foregroundRepairPending = false;
 const playbackRun = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+const diagnosticAudioIds = new WeakMap();
+let nextDiagnosticAudioId = 0;
 const storedPlaybackEvents = readJson(PLAYBACK_DIAGNOSTICS_KEY, []);
 const playbackEvents = Array.isArray(storedPlaybackEvents) ? storedPlaybackEvents.slice(-80) : [];
 
@@ -881,12 +886,14 @@ function audioSessionState() {
 }
 
 function recordPlaybackEvent(event, detail = "") {
-  playbackEvents.push({ time: Date.now(), run: playbackRun, event, detail, session: audioSessionState(), hidden: document.hidden, wanted: playbackWanted, interrupted: interruptedPlayback, mediaState: navigator.mediaSession?.playbackState || "none", position: Math.round((elements.audio.currentTime || 0) * 100) / 100, checkpoint: interruptionPosition ?? savedPlaybackPosition, paused: elements.audio.paused, readyState: elements.audio.readyState, errorCode: elements.audio.error?.code || null, muted: elements.audio.muted, volume: elements.audio.volume });
+  const audio = elements.audio;
+  if (!diagnosticAudioIds.has(audio)) diagnosticAudioIds.set(audio, ++nextDiagnosticAudioId);
+  playbackEvents.push({ time: Date.now(), run: playbackRun, event, detail, audioId: diagnosticAudioIds.get(audio), session: audioSessionState(), hidden: document.hidden, wanted: playbackWanted, interrupted: interruptedPlayback, mediaState: navigator.mediaSession?.playbackState || "none", position: Math.round((audio.currentTime || 0) * 100) / 100, checkpoint: interruptionPosition ?? savedPlaybackPosition, paused: audio.paused, readyState: audio.readyState, seeking: audio.seeking, playbackRate: audio.playbackRate, clockStage: playbackClockWatch?.stage || "none", clockStalled: playbackClockStalled, errorCode: audio.error?.code || null, muted: audio.muted, volume: audio.volume });
   if (playbackEvents.length > 80) playbackEvents.shift();
   persistPlaybackEvents();
 }
 // No keys, URLs or track metadata: useful for diagnosing native event ordering.
-window.getMusicPlaybackDiagnostics = () => JSON.stringify({ version: 63, run: playbackRun, userAgent: navigator.userAgent, events: playbackEvents }, null, 2);
+window.getMusicPlaybackDiagnostics = () => JSON.stringify({ version: 64, run: playbackRun, userAgent: navigator.userAgent, events: playbackEvents }, null, 2);
 recordPlaybackEvent("page-start");
 window.addEventListener("pagehide", () => recordPlaybackEvent("page-hide"));
 window.addEventListener("pageshow", () => recordPlaybackEvent("page-show"));
@@ -900,12 +907,18 @@ function configureAudioSession() {
 }
 configureAudioSession();
 
+function cancelPlaybackWatchdog() {
+  clearTimeout(playbackWatchdog);
+  playbackWatchdog = 0;
+  playbackClockWatch?.controller?.abort();
+  playbackClockWatch = null;
+}
 function cancelPlaybackAttempt() {
   resumeAttempt += 1;
   recoveryController?.abort();
   recoveryController = null;
   resumePromise = null;
-  clearTimeout(playbackWatchdog);
+  cancelPlaybackWatchdog();
   rollbackAudioReplacement();
 }
 function rollbackAudioReplacement() {
@@ -1041,6 +1054,7 @@ async function reloadPlayback(source, position, isCurrent, signal, fresh = false
     pendingAudioReplacement = { audio, backup: oldAudio };
     bindAudioEvents(audio);
   }
+  recordPlaybackEvent("decoder-reload", fresh ? "replacement" : "same-element");
   audio.pause();
   audio.muted = false;
   audio.volume = 1;
@@ -1120,16 +1134,87 @@ async function continueExistingPlayback(audio, position, restorePosition, signal
 }
 
 function schedulePlaybackWatchdog() {
-  clearTimeout(playbackWatchdog);
   if (!playbackWanted || interruptedPlayback) return;
   const audio = elements.audio;
-  const start = audio.currentTime;
   const attempt = resumeAttempt;
-  playbackWatchdog = setTimeout(() => {
-    if (audio !== elements.audio || attempt !== resumeAttempt || !playbackWanted || interruptedPlayback || audio.ended || audio.seeking || audio.paused || audio.readyState < 3) return;
-    if (audio.currentTime > start + .05) { watchdogRepairs = 0; return; }
+  // Repeated native playing events are not clock progress and must not postpone
+  // the same observation window indefinitely.
+  if (playbackClockWatch?.audio === audio && playbackClockWatch.attempt === attempt) {
+    if (audio.currentTime <= playbackClockWatch.start + .05) return;
+    watchdogRepairs = backgroundWakeAttempts = 0;
+    playbackClockStalled = false;
+    recordPlaybackEvent("clock-progress", "resample");
+  }
+  cancelPlaybackWatchdog();
+  const watch = { audio, attempt, track: state.currentTrack, start: audio.currentTime, stage: "observe", deadline: 0, wakeGrace: false, controller: null };
+  playbackClockWatch = watch;
+  const current = () => playbackClockWatch === watch && audio === elements.audio && attempt === resumeAttempt && playbackWanted && state.currentTrack === watch.track;
+  const arm = (delay) => {
+    clearTimeout(playbackWatchdog);
+    watch.deadline = performance.now() + delay;
+    playbackWatchdog = setTimeout(check, delay);
+  };
+  watch.arm = arm;
+  const deferBackground = () => {
+    interruptionPosition ??= watch.start;
+    savedPlaybackPosition = interruptionPosition;
+    interruptedPlayback = outputNeedsReset = playbackClockStalled = true;
+    // After two observed flat-clock windows, publish paused without pausing the
+    // native element. A known microphone interruption still keeps its restore
+    // state; an opaque timed-out paused capture follows the separate play path.
+    setPlaybackButtonState(false, navigator.audioSession?.state !== "interrupted");
+    updateMediaPosition();
+    recordPlaybackEvent("background-clock-deferred", watch.stage);
+    cancelPlaybackWatchdog();
+  };
+  const check = () => {
+    if (!current()) return;
+    if (audio.ended || audio.seeking || audio.paused || audio.readyState < 3) { cancelPlaybackWatchdog(); return; }
+    if (audio.currentTime > watch.start + .05) {
+      watchdogRepairs = backgroundWakeAttempts = 0;
+      playbackClockStalled = false;
+      recordPlaybackEvent("clock-progress", watch.stage);
+      cancelPlaybackWatchdog();
+      return;
+    }
+    // A frozen WebProcess can deliver a timer immediately after wake. Elapsed
+    // wall time is not a complete observation of the restarted native clock.
+    if (!watch.wakeGrace && performance.now() - watch.deadline > 1000) {
+      watch.wakeGrace = true;
+      watch.start = audio.currentTime;
+      recordPlaybackEvent("clock-wake-grace", watch.stage);
+      arm(document.hidden ? 3000 : 1500);
+      return;
+    }
+    if (audio.currentTime < watch.start - .05) {
+      watch.start = audio.currentTime;
+      arm(document.hidden ? 3000 : 1500);
+      return;
+    }
+    if (document.hidden) {
+      if (watch.stage === "probe" || backgroundWakeAttempts >= 1) { deferBackground(); return; }
+      // A new element has no background playback admission. Keep the unlocked
+      // player alive and reissue its existing rate to AVPlayer, then play once.
+      // WebKit forwards even a same-value rate assignment to the native engine.
+      if (navigator.audioSession?.state === "interrupted") { deferBackground(); return; }
+      watch.stage = "probe";
+      backgroundWakeAttempts += 1;
+      playbackClockStalled = true;
+      watch.controller = new AbortController();
+      recordPlaybackEvent("background-clock-wake");
+      arm(3000);
+      try {
+        configureAudioSession();
+        audio.muted = false; audio.volume = 1;
+        audio.playbackRate = audio.playbackRate || 1;
+        void playWithTimeout(audio, watch.controller.signal).catch((error) => {
+          if (current()) recordPlaybackEvent("background-clock-wake-rejected", error.name || "Error");
+        });
+      } catch (error) { if (current()) recordPlaybackEvent("background-clock-wake-rejected", error.name || "Error"); }
+      return;
+    }
     if (watchdogRepairs >= 1) {
-      markPlaybackInterrupted(start);
+      markPlaybackInterrupted(watch.start);
       setPlaybackButtonState(false);
       recordPlaybackEvent("decoder-still-stalled");
       setStatus("Аудиовывод не возобновился. Нажмите Play в системном плеере.", true);
@@ -1137,9 +1222,11 @@ function schedulePlaybackWatchdog() {
     }
     watchdogRepairs += 1;
     recordPlaybackEvent("decoder-stalled");
-    markPlaybackInterrupted(start);
+    playbackClockStalled = true;
+    markPlaybackInterrupted(watch.start);
     void resumePlayback(true, true);
-  }, 1500);
+  };
+  arm(document.hidden ? 3000 : 1500);
 }
 
 function resumePlayback(force = false, fresh = false, fromControl = false) {
@@ -1148,6 +1235,8 @@ function resumePlayback(force = false, fresh = false, fromControl = false) {
   recentMediaPause = null;
   if (fromControl) {
     recordPlaybackEvent("control-play");
+    cancelPlaybackWatchdog();
+    backgroundWakeAttempts = watchdogRepairs = 0;
     // A new control callback carries a fresh activation. A suspended timer or
     // an old pending play promise must not consume that new attempt.
     if (resumePromise) { recordPlaybackEvent("control-replaces-pending"); cancelPlaybackAttempt(); }
@@ -1170,7 +1259,9 @@ function resumePlayback(force = false, fresh = false, fromControl = false) {
   const isCurrent = () => attempt === resumeAttempt && playbackWanted && state.currentTrack === track && !controller.signal.aborted;
   // An interruption needs its checkpoint restored, not a new decoder. Only
   // a confirmed error/stall requests pause/load or replacement.
-  const resetOutput = force;
+  // A fresh native control callback can reload a confirmed stalled original
+  // synchronously. Automatic background recovery must keep its player intact.
+  const resetOutput = (force || (fromControl && playbackClockStalled)) && (!document.hidden || fromControl);
   const restorePosition = outputNeedsReset || interruptionPosition !== null;
   if (resetOutput || restorePosition) {
     // A replacement may have currentTime=0 until metadata arrives. Never let
@@ -1187,7 +1278,7 @@ function resumePlayback(force = false, fresh = false, fromControl = false) {
   void (async () => {
     try {
       try {
-        if (resetOutput) await reloadPlayback(source, position, isCurrent, controller.signal, fresh);
+        if (resetOutput) await reloadPlayback(source, position, isCurrent, controller.signal, fresh && !document.hidden);
         else await continueExistingPlayback(audio, position, restorePosition, controller.signal);
       } catch (error) {
         if (!isCurrent()) return false;
@@ -1197,7 +1288,7 @@ function resumePlayback(force = false, fresh = false, fromControl = false) {
         // An opaque session's pending play may time out during a long voice
         // recording. That is not proof of decoder failure: keep this automatic
         // probe play-only, preserving the native player until capture ends.
-        if (error.name === "NotAllowedError" || (!fromControl && sessionState === "interrupted") || unknownCapture) throw error;
+        if (error.name === "NotAllowedError" || (!fromControl && sessionState === "interrupted") || unknownCapture || document.hidden) throw error;
         // One fresh decoder attempt. Refresh a rejected/expired source first;
         // an otherwise stalled decoder does not need another backend request.
         let refreshedSource = source;
@@ -1303,6 +1394,12 @@ function seekPlayback(position) {
   savedPlaybackPosition = target;
   if (interruptionPosition !== null) interruptionPosition = target;
   if (pendingMediaPause) pendingMediaPause.position = target;
+  // finishSeek queues timeupdate before seeked; update the clock baseline now
+  // so the seek jump cannot masquerade as resumed native playback.
+  if (playbackClockWatch?.audio === audio) {
+    playbackClockWatch.start = target;
+    playbackClockWatch.arm(document.hidden ? 3000 : 1500);
+  }
   if (audio.readyState >= 1) audio.currentTime = target;
   updateMediaPosition();
   if (wasRecovering && playbackWanted && navigator.audioSession?.state !== "interrupted") void resumePlayback();
@@ -1314,6 +1411,9 @@ function bindAudioEvents(audio) {
     recordPlaybackEvent("audio-playing");
     if (!playbackWanted) { audio.pause(); return; }
     if (resumePromise) return;
+    // Another playing notification alone cannot complete a confirmed clock
+    // stall or turn the widget back to Pause. Real time progression below can.
+    if (playbackClockStalled) return;
     const nativePause = pendingMediaPause?.nativePaused;
     if (pendingMediaPause) {
       if (!nativePause) return;
@@ -1341,6 +1441,15 @@ function bindAudioEvents(audio) {
   });
   audio.addEventListener("timeupdate", () => {
     if (!current()) return;
+    const checkpoint = interruptionPosition ?? playbackClockWatch?.start ?? savedPlaybackPosition;
+    if (playbackClockStalled && playbackWanted && !resumePromise && !audio.paused && !audio.seeking && audio.readyState >= 3 && audio.currentTime > checkpoint + .05) {
+      interruptedPlayback = outputNeedsReset = playbackClockStalled = false;
+      interruptionPosition = null;
+      watchdogRepairs = backgroundWakeAttempts = 0;
+      recordPlaybackEvent("clock-progress", "wake");
+      cancelPlaybackWatchdog();
+      setPlaybackButtonState(true);
+    }
     const { duration } = audio;
     const currentTime = outputNeedsReset ? savedPlaybackPosition : audio.currentTime;
     if (!outputNeedsReset && !pendingMediaPause && Number.isFinite(currentTime) && currentTime > 0) savedPlaybackPosition = currentTime;
@@ -1350,7 +1459,14 @@ function bindAudioEvents(audio) {
     updateMediaPosition();
   });
   audio.addEventListener("loadedmetadata", updateMediaPosition);
-  audio.addEventListener("seeked", updateMediaPosition);
+  audio.addEventListener("seeked", () => {
+    if (!current()) return;
+    updateMediaPosition();
+    if (playbackClockWatch?.audio === audio) {
+      playbackClockWatch.start = audio.currentTime;
+      playbackClockWatch.arm(document.hidden ? 3000 : 1500);
+    }
+  });
   audio.addEventListener("ended", () => { if (current() && playbackWanted && !outputNeedsReset && !resumePromise) moveTrack(1); });
   audio.addEventListener("error", () => {
     if (!current() || resumePromise) return;
@@ -1365,7 +1481,7 @@ async function playTrack(track, queue) {
   interruptedPlayback = false;
   outputNeedsReset = false;
   clearPendingMediaPause(); recentMediaPause = null; cancelPlaybackAttempt();
-  savedPlaybackPosition = 0; interruptionPosition = null; watchdogRepairs = 0;
+  savedPlaybackPosition = 0; interruptionPosition = null; watchdogRepairs = backgroundWakeAttempts = 0; playbackClockStalled = false;
   state.playbackQueue = queue; state.currentTrackKey = trackKey(track); state.currentTrack = track; elements.audio.src = track.fileUrl;
   elements.seek.value = "0"; elements.miniProgress.style.width = "0%"; elements.trackLabel.textContent = "Сейчас играет";
   elements.trackTitle.textContent = track.title; elements.trackArtist.textContent = artistForTrack(track).name; elements.trackArtist.disabled = false;

@@ -39,11 +39,11 @@ SESSION = r'''(() => {
 
 STRICT_MEDIA = r'''(() => {
   const models=new WeakMap(); let serial=0;
-  function m(a){let v=models.get(a);if(!v){v={id:++serial,source:'',paused:true,ended:false,position:0,duration:NaN,ready:0,epoch:0,plays:0,loads:0,events:[],next:'ok',pending:[],audible:false,metadataDelay:24,playingDelay:16,...window.__media?.options};models.set(a,v)}return v}
+  function m(a){let v=models.get(a);if(!v){v={id:++serial,source:'',paused:true,ended:false,position:0,duration:NaN,ready:0,epoch:0,plays:0,loads:0,pauses:0,scriptPauses:0,seeks:0,playbackRate:1,rateWrites:0,seekTimeupdateFirst:false,unlocked:false,backgroundRevoked:false,clockFrozen:false,wakeWith:null,events:[],next:'ok',pending:[],audible:false,metadataDelay:24,playingDelay:16,...window.__media?.options};models.set(a,v)}return v}
   function event(a,name){const v=m(a);v.events.push({name,position:v.position,time:performance.now(),epoch:v.epoch});a.dispatchEvent(new Event(name))}
   function cancel(a){const v=m(a);v.epoch++;v.audible=false;v.pending.splice(0).forEach(p=>p.reject(new DOMException('Superseded media operation','AbortError')))}
-  function finish(a){const v=m(a);if(v.paused||!v.ready||v.blocked||v.next==='frozen')return;const epoch=v.epoch;setTimeout(()=>{if(epoch!==v.epoch||v.paused||v.blocked)return;v.audible=true;event(a,'playing');v.pending.splice(0).forEach(p=>p.resolve());if(!v.clockTimer)v.clockTimer=setInterval(()=>{if(v.audible&&!v.paused){v.position+=.2;event(a,'timeupdate')}},200)},v.playingDelay)}
-  function sourceLoad(a,source){const v=m(a);cancel(a);v.source=source;v.ready=0;v.position=0;v.duration=NaN;v.ended=false;const epoch=v.epoch;setTimeout(()=>{if(epoch!==v.epoch)return;event(a,'abort');event(a,'emptied');},0);setTimeout(()=>{if(epoch!==v.epoch)return;v.ready=1;v.duration=180;event(a,'loadedmetadata');v.ready=4;event(a,'canplay');finish(a);},v.metadataDelay)}
+  function finish(a){const v=m(a);if(v.paused||!v.ready||v.blocked||v.next==='frozen')return;const epoch=v.epoch;setTimeout(()=>{if(epoch!==v.epoch||v.paused||v.blocked)return;v.audible=!v.clockFrozen;event(a,'playing');v.pending.splice(0).forEach(p=>p.resolve());if(!v.clockTimer)v.clockTimer=setInterval(()=>{if(v.audible&&!v.paused&&!v.clockFrozen){v.position+=.2;event(a,'timeupdate')}},200)},v.playingDelay)}
+  function sourceLoad(a,source){const v=m(a);if(window.__media?.backgroundPolicy&&document.hidden&&!__gesture)v.backgroundRevoked=true;cancel(a);v.clockFrozen=false;v.wakeWith=null;v.source=source;v.ready=0;v.position=0;v.duration=NaN;v.ended=false;const epoch=v.epoch;setTimeout(()=>{if(epoch!==v.epoch)return;event(a,'abort');event(a,'emptied');},0);setTimeout(()=>{if(epoch!==v.epoch)return;v.ready=1;v.duration=180;event(a,'loadedmetadata');v.ready=4;event(a,'canplay');finish(a);},v.metadataDelay)}
   const proto=HTMLMediaElement.prototype;
   const nativeGetAttribute=Element.prototype.getAttribute;
   Element.prototype.getAttribute=function(name){if(this.tagName==='AUDIO'&&name==='src')return m(this).source||null;return nativeGetAttribute.call(this,name)};
@@ -54,14 +54,37 @@ STRICT_MEDIA = r'''(() => {
   for(const name of ['src','currentSrc','paused','ended','currentTime','duration','readyState','networkState']){
     const old=Object.getOwnPropertyDescriptor(proto,name);
     const get=function(){if(this.tagName!=='AUDIO')return old.get.call(this);const v=m(this);return ({src:v.source,currentSrc:v.source,paused:v.paused,ended:v.ended,currentTime:v.position,duration:v.duration,readyState:v.ready,networkState:v.ready?1:2})[name]};
-    const set=name==='src'?function(value){if(this.tagName!=='AUDIO')return old.set.call(this,value);sourceLoad(this,String(value))}:name==='currentTime'?function(value){if(this.tagName!=='AUDIO')return old.set.call(this,value);const v=m(this);if(!v.ready)throw new DOMException('No metadata','InvalidStateError');v.position=Number(value);v.ended=Number.isFinite(v.duration)&&v.position>=v.duration;setTimeout(()=>{event(this,'seeking');event(this,'seeked');event(this,'timeupdate')},0)}:old.set;
+    const set=name==='src'?function(value){if(this.tagName!=='AUDIO')return old.set.call(this,value);sourceLoad(this,String(value))}:name==='currentTime'?function(value){if(this.tagName!=='AUDIO')return old.set.call(this,value);const v=m(this);if(!v.ready)throw new DOMException('No metadata','InvalidStateError');v.seeks++;if(v.clockFrozen&&v.wakeWith==='seek'){v.clockFrozen=false;v.wakeWith=null;v.audible=!v.paused}v.position=Number(value);v.ended=Number.isFinite(v.duration)&&v.position>=v.duration;setTimeout(()=>{event(this,'seeking');if(v.seekTimeupdateFirst)event(this,'timeupdate');event(this,'seeked');if(!v.seekTimeupdateFirst)event(this,'timeupdate')},0)}:old.set;
     Object.defineProperty(proto,name,{configurable:true,get,set});
   }
+  const nativeRate=Object.getOwnPropertyDescriptor(proto,'playbackRate');
+  Object.defineProperty(proto,'playbackRate',{configurable:true,
+    get(){return this.tagName==='AUDIO'?m(this).playbackRate:nativeRate.get.call(this)},
+    set(value){if(this.tagName!=='AUDIO')return nativeRate.set.call(this,value);const v=m(this);v.rateWrites++;v.playbackRate=Number(value);if(v.clockFrozen&&v.wakeWith==='rate'){v.clockFrozen=false;v.wakeWith=null;v.audible=!v.paused}}
+  });
   const nativePlay=proto.play,nativePause=proto.pause,nativeLoad=proto.load;
-  proto.play=function(){if(this.tagName!=='AUDIO')return nativePlay.call(this);const v=m(this);v.plays++;const mode=window.__media.next||v.next;window.__media.next=null;v.next=mode==='frozen'?'frozen':'ok';v.blocked=mode==='hold'||mode==='frozen';if(mode==='deny')return Promise.reject(new DOMException('Autoplay blocked','NotAllowedError'));if(mode==='expire')return Promise.reject(new DOMException('Bad URL','NotSupportedError'));v.paused=false;setTimeout(()=>event(this,'play'),0);if(mode==='promise-only'){finish(this);return Promise.resolve()}return new Promise((resolve,reject)=>{v.pending.push({resolve,reject});if(mode!=='hold'&&mode!=='frozen')finish(this)})};
-  proto.pause=function(){if(this.tagName!=='AUDIO')return nativePause.call(this);const v=m(this);if(v.paused)return;v.paused=true;v.audible=false;v.pending.splice(0).forEach(p=>p.reject(new DOMException('Paused pending play','AbortError')));setTimeout(()=>event(this,'pause'),0)};
+  proto.play=function(){
+    if(this.tagName!=='AUDIO')return nativePlay.call(this);const v=m(this);v.plays++;
+    // Opt-in fixture: a previously admitted element keeps background permission,
+    // while cloning or deactivating its native player requires fresh activation.
+    if(window.__media.backgroundPolicy&&document.hidden&&!__gesture&&(!v.unlocked||v.backgroundRevoked)){event(this,'permission-denied');return Promise.reject(new DOMException('Background player is not admitted','NotAllowedError'))}
+    if(__gesture){v.unlocked=true;v.backgroundRevoked=false}
+    // A scenario can explicitly model native repeat-play waking the old player.
+    // This is not assumed for every stall or claimed as a platform guarantee.
+    if(v.clockFrozen&&v.wakeWith==='play'){v.clockFrozen=false;v.wakeWith=null}
+    const mode=window.__media.next||v.next;window.__media.next=null;v.next=mode==='frozen'?'frozen':'ok';v.blocked=mode==='hold'||mode==='frozen';
+    if(mode==='deny')return Promise.reject(new DOMException('Autoplay blocked','NotAllowedError'));if(mode==='expire')return Promise.reject(new DOMException('Bad URL','NotSupportedError'));
+    v.paused=false;setTimeout(()=>event(this,'play'),0);if(mode==='promise-only'){finish(this);return Promise.resolve()}return new Promise((resolve,reject)=>{v.pending.push({resolve,reject});if(mode!=='hold'&&mode!=='frozen')finish(this)})
+  };
+  proto.pause=function(){if(this.tagName!=='AUDIO')return nativePause.call(this);const v=m(this);v.pauses++;if(!window.__media.externalOperation){v.scriptPauses++;if(window.__media.backgroundPolicy&&document.hidden&&!__gesture)v.backgroundRevoked=true}if(v.paused)return;v.paused=true;v.audible=false;v.pending.splice(0).forEach(p=>p.reject(new DOMException('Paused pending play','AbortError')));setTimeout(()=>event(this,'pause'),0)};
   proto.load=function(){if(this.tagName!=='AUDIO')return nativeLoad.call(this);const v=m(this);v.loads++;sourceLoad(this,v.source)};
-  window.__media={model:m,event,next:null,options:{},advance(a,position){const v=m(a);v.position=position;event(a,'timeupdate')},metadataReady(a){const v=m(a);v.ready=1;v.duration=180;event(a,'loadedmetadata');v.ready=4;event(a,'canplay');finish(a)},externalPause(a){a.pause()},freeze(a){const v=m(a);v.audible=false;v.next='frozen'},forcePaused(a){m(a).paused=false},snapshot(a){const v=m(a);return {id:v.id,source:v.source,paused:v.paused,position:v.position,ready:v.ready,plays:v.plays,loads:v.loads,audible:v.audible,events:v.events.slice(-12)}}};
+  window.__media={model:m,event,next:null,options:{},backgroundPolicy:false,externalOperation:false,
+    allowExistingBackground(a){this.backgroundPolicy=true;const v=m(a);v.unlocked=true;v.backgroundRevoked=false},
+    nativeStall(a,wakeWith=null){const v=m(a);v.paused=false;v.clockFrozen=true;v.audible=false;v.wakeWith=wakeWith;event(a,'playing')},
+    releaseNativeStall(a){const v=m(a);v.clockFrozen=false;v.audible=!v.paused;event(a,'timeupdate')},
+    advance(a,position){const v=m(a);v.position=position;event(a,'timeupdate')},metadataReady(a){const v=m(a);v.ready=1;v.duration=180;event(a,'loadedmetadata');v.ready=4;event(a,'canplay');finish(a)},
+    externalPause(a){this.externalOperation=true;try{a.pause()}finally{this.externalOperation=false}},freeze(a){const v=m(a);v.audible=false;v.next='frozen'},forcePaused(a){m(a).paused=false},
+    snapshot(a){const v=m(a);return {id:v.id,source:v.source,paused:v.paused,position:v.position,ready:v.ready,plays:v.plays,loads:v.loads,scriptPauses:v.scriptPauses,seeks:v.seeks,playbackRate:v.playbackRate,rateWrites:v.rateWrites,unlocked:v.unlocked,backgroundRevoked:v.backgroundRevoked,clockFrozen:v.clockFrozen,audible:v.audible,events:v.events.slice(-12)}}};
 })();'''
 
 COMMON = r'''window.__test.assert=(condition,message)=>{if(!condition)throw Error(message)};
@@ -72,6 +95,151 @@ window.__test.model=()=>__media.model(__test.audio());
 window.__test.start=async(tracks)=>{await __test.playTrack(tracks[0],tracks);await __test.until(()=>__test.model().audible,'initial playing event');__media.advance(__test.audio(),43);await __test.wait()};'''
 
 SCENARIOS = {
+ 'hidden_seek_jump_does_not_fake_native_clock_progress': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);
+   const audio=t.audio(),model=t.model(),loads=model.loads,epoch=model.epoch,pauses=model.scriptPauses,plays=model.plays;
+   __media.allowExistingBackground(audio);__hidden=true;document.dispatchEvent(new Event('visibilitychange'));
+   __media.externalPause(audio);await t.wait(45);__media.nativeStall(audio);
+   await t.until(()=>t.model().plays===plays+1,'the stalled clock has received its one background wake',4000);await t.wait(2600);
+   // WebKit finishSeek queues timeupdate before seeked with seeking already
+   // cleared. The jump itself must not be accepted as post-capture clock gain.
+   model.seekTimeupdateFirst=true;__command('seekto',{seekTime:80},true);await t.wait(650);
+   t.assert(t.audio()===audio&&t.model().loads===loads&&t.model().epoch===epoch&&t.model().scriptPauses===pauses&&!t.model().audible,'seek must not mutate or replace the stalled native decoder');
+   t.assert(navigator.mediaSession.playbackState==='playing','seek refreshes the observation grace and cancels its previous clock deadline');
+   const records=JSON.parse(getMusicPlaybackDiagnostics()).events;
+   t.assert(!records.some(event=>event.event==='clock-progress'&&event.detail==='wake'),'a timeupdate caused solely by seek must not claim resumed native playback');
+   await t.wait(2700);
+   const last=JSON.parse(getMusicPlaybackDiagnostics()).events.at(-1);
+   t.assert(last.wanted&&Math.abs(last.checkpoint-80)<.6&&navigator.mediaSession.playbackState==='paused','unchanged native clock after seek must remain stalled at the new80s checkpoint');
+   t.assert(t.model().plays===plays+1,'seeking a stalled background player must not create another automatic wake probe');
+   __command('play',{},true);await t.until(()=>t.model().audible,'SystemPlay repairs at the user-selected checkpoint',800);
+   t.assert(t.audio()===audio&&Math.abs(t.model().position-80)<.8,'control recovery restores the seek target, not the pre-seek interruption position');
+ }''',
+ 'hidden_denied_clock_probe_preserves_original_and_waits_for_control': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);
+   const audio=t.audio(),model=t.model(),loads=model.loads,epoch=model.epoch,pauses=model.scriptPauses,plays=model.plays;
+   __media.allowExistingBackground(audio);__hidden=true;document.dispatchEvent(new Event('visibilitychange'));
+   __media.externalPause(audio);await t.wait(45);__media.nativeStall(audio);__media.next='deny';await t.wait(6500);
+   t.assert(t.audio()===audio&&t.model().loads===loads&&t.model().epoch===epoch&&t.model().scriptPauses===pauses&&!t.model().paused&&!t.model().backgroundRevoked,'a denied background clock wake must not deactivate, replace or lose admission of the original player');
+   t.assert(t.model().plays===plays+1&&navigator.mediaSession.playbackState==='paused','denied clock probe has no retry loop and provides a usable system Play');
+   const diagnostic=JSON.parse(getMusicPlaybackDiagnostics()).events;
+   t.assert(diagnostic.some(event=>event.event==='background-clock-wake-rejected'&&event.detail==='NotAllowedError')&&diagnostic.at(-1).wanted,'diagnostic must distinguish native denial from decoder corruption while preserving intent');
+   __command('play',{},true);await t.until(()=>t.model().audible,'a new control activation can recover after the denied native wake',800);
+   t.assert(t.audio()===audio&&Math.abs(t.model().position-43)<.8,'new Control Play retains the original native element and checkpoint');
+ }''',
+ 'hidden_system_play_supersedes_pending_clock_probe': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);
+   const audio=t.audio(),model=t.model(),plays=model.plays;
+   __media.allowExistingBackground(audio);__hidden=true;document.dispatchEvent(new Event('visibilitychange'));
+   __media.externalPause(audio);await t.wait(45);__media.nativeStall(audio);__media.next='hold';
+   await t.until(()=>t.model().plays===plays+1,'the background wake probe has begun',4000);await t.wait(35);
+   __command('play',{},true);await t.until(()=>t.model().audible,'fresh SystemPlay repairs without waiting for the old pending probe',800);
+   t.assert(t.audio()===audio&&!t.model().backgroundRevoked&&Math.abs(t.model().position-43)<.8,'new control activation owns the original admitted decoder and checkpoint');
+   const repairedEpoch=t.model().epoch,repairedLoads=t.model().loads,repairedPlays=t.model().plays;
+   await t.wait(3800);
+   t.assert(t.model().audible&&t.model().epoch===repairedEpoch&&t.model().loads===repairedLoads&&t.model().plays===repairedPlays,'late rejection and clock timer from the replaced probe cannot pause, reload or replay the new command');
+ }''',
+ 'hidden_rate_probe_wakes_original_native_player_without_time_change': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);
+   const audio=t.audio(),model=t.model(),loads=model.loads,epoch=model.epoch,pauses=model.scriptPauses,seeks=model.seeks,plays=model.plays,rateWrites=model.rateWrites,rate=model.playbackRate;
+   __media.allowExistingBackground(audio);__hidden=true;document.dispatchEvent(new Event('visibilitychange'));
+   __media.externalPause(audio);await t.wait(45);__media.nativeStall(audio,'rate');
+   await t.until(()=>t.model().audible&&t.model().position>43.05,'same-value rate probe wakes the admitted native player',4500);
+   t.assert(t.audio()===audio&&t.model().loads===loads&&t.model().epoch===epoch&&t.model().scriptPauses===pauses&&t.model().seeks===seeks,'a native rate wake must retain source, decoder, time and background permission');
+   t.assert(t.model().rateWrites===rateWrites+1&&t.model().playbackRate===rate&&t.model().plays===plays+1,'one background clock episode reasserts the unchanged rate and invokes existing Play exactly once');
+   t.assert(__session.types.every(type=>type==='playback')&&navigator.mediaSession.playbackState==='playing','wake retains the playback category and system state');
+ }''',
+ 'hidden_late_watchdog_timer_grants_fresh_native_grace': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);
+   const audio=t.audio(),model=t.model(),loads=model.loads,epoch=model.epoch,pauses=model.scriptPauses,plays=model.plays;
+   const now=performance.now.bind(performance);let suspendedTime=0;
+   Object.defineProperty(performance,'now',{configurable:true,value:()=>now()+suspendedTime});
+   __media.allowExistingBackground(audio);__hidden=true;document.dispatchEvent(new Event('visibilitychange'));
+   __media.externalPause(audio);await t.wait(45);__media.nativeStall(audio);await t.wait(2600);
+   // Model an overdue timer delivered before the native post-capture clock has
+   // had any running time. This offset does not expire real JS timers early.
+   suspendedTime=5000;await t.wait(700);
+   t.assert(t.model().plays===plays,'a watchdog timer delayed by suspension must provide fresh clock grace before probing');
+   t.assert(t.audio()===audio&&t.model().loads===loads&&t.model().epoch===epoch&&t.model().scriptPauses===pauses,'overdue timer must not deactivate the newly resumed background player');
+   __media.releaseNativeStall(audio);await t.wait(500);
+   t.assert(t.model().audible&&t.model().position>43.1&&t.model().plays===plays,'native clock recovers within fresh post-suspension grace without a script Play');
+ }''',
+ 'hidden_native_clock_delayed_2200_keeps_admitted_decoder': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);
+   const audio=t.audio(),loads=t.model().loads,epoch=t.model().epoch,pauses=t.model().scriptPauses;
+   __media.allowExistingBackground(audio);__hidden=true;document.dispatchEvent(new Event('visibilitychange'));
+   __media.externalPause(audio);await t.wait(45);__media.nativeStall(audio);
+   setTimeout(()=>__media.releaseNativeStall(audio),2200);await t.wait(2700);
+   t.assert(t.model().audible&&t.model().position>43.1,'delayed native clock must recover while the app remains backgrounded');
+   t.assert(t.audio()===audio&&t.model().loads===loads&&t.model().epoch===epoch&&t.model().scriptPauses===pauses,'2.2s native resume must preserve the admitted decoder without load, source assignment, script pause or clone');
+   t.assert(navigator.mediaSession.playbackState==='playing','delayed successful native clock must preserve Control Center Playing');
+ }''',
+ 'hidden_play_probe_wakes_original_decoder_without_reset': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);
+   const audio=t.audio(),model=t.model(),loads=model.loads,epoch=model.epoch,pauses=model.scriptPauses,plays=model.plays;
+   __media.allowExistingBackground(audio);__hidden=true;document.dispatchEvent(new Event('visibilitychange'));
+   __media.externalPause(audio);await t.wait(45);__media.nativeStall(audio,'play');
+   await t.until(()=>t.model().audible&&t.model().position>43.05,'one background same-element play probe wakes the admitted native player',4500);
+   t.assert(t.audio()===audio&&t.model().loads===loads&&t.model().epoch===epoch&&t.model().scriptPauses===pauses,'automatic background probe must never deactivate or replace the native player');
+   t.assert(t.model().plays===plays+1,'one stalled episode permits only one play-only probe');
+   t.assert(navigator.mediaSession.playbackState==='playing','recovered original clock retains the system Playing state');
+ }''',
+ 'hidden_stall_defers_decoder_reset_until_explicit_system_play': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);
+   const audio=t.audio(),model=t.model(),loads=model.loads,epoch=model.epoch,pauses=model.scriptPauses,plays=model.plays;
+   __media.allowExistingBackground(audio);__hidden=true;document.dispatchEvent(new Event('visibilitychange'));
+   __media.externalPause(audio);await t.wait(45);__media.nativeStall(audio);await t.wait(6500);
+   t.assert(t.audio()===audio&&t.model().loads===loads&&t.model().epoch===epoch&&t.model().scriptPauses===pauses&&!t.model().paused,'a confirmed hidden stall must retain its admitted native decoder after both observation windows');
+   t.assert(t.model().plays===plays+1&&!t.model().audible,'persistent hidden stall must be bounded to one same-element probe');
+   t.assert(navigator.mediaSession.playbackState==='paused','confirmed stalled clock must offer Play in Control Center');
+   const diagnostic=JSON.parse(getMusicPlaybackDiagnostics()).events.at(-1);
+   t.assert(diagnostic.wanted&&Math.abs(diagnostic.checkpoint-43)<.6,'deferred background repair keeps playback intent and interruption checkpoint');
+   __command('play',{},true);await t.until(()=>t.model().audible&&t.model().position>=43,'fresh explicit SystemPlay can repair the existing admitted element',1700);
+   t.assert(t.audio()===audio&&t.model().loads>loads&&!t.model().backgroundRevoked,'confirmed stalled Control Play must reset the same original element while its activation is live');
+   t.assert(Math.abs(t.model().position-43)<1&&navigator.mediaSession.playbackState==='playing','explicit recovery retains the capture checkpoint and updates the widget');
+ }''',
+ 'hidden_long_probe_preserves_decoder_and_intent': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);
+   const audio=t.audio(),model=t.model(),loads=model.loads,epoch=model.epoch,pauses=model.scriptPauses,plays=model.plays;
+   __media.allowExistingBackground(audio);__hidden=true;document.dispatchEvent(new Event('visibilitychange'));
+   __media.externalPause(audio);await t.wait(45);__media.nativeStall(audio);__media.next='hold';await t.wait(6500);
+   t.assert(t.audio()===audio&&t.model().loads===loads&&t.model().epoch===epoch&&t.model().scriptPauses===pauses,'a pending background probe must not become decoder failure or mutate the native player');
+   t.assert(t.model().plays===plays+1&&!t.model().audible,'long pending background probe is bounded to one play call');
+   const diagnostic=JSON.parse(getMusicPlaybackDiagnostics()).events.at(-1);
+   t.assert(diagnostic.wanted&&Math.abs(diagnostic.checkpoint-43)<.6,'pending probe timeout retains the interruption checkpoint and resume intent');
+   __command('play',{},true);await t.until(()=>t.model().audible,'a fresh Control Center activation bypasses the old pending probe',1700);
+   t.assert(t.audio()===audio&&Math.abs(t.model().position-43)<1,'new Control Play keeps original element and checkpoint after a timed out probe');
+ }''',
+ 'hidden_repeated_playing_events_keep_one_clock_episode': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);
+   const audio=t.audio(),model=t.model(),loads=model.loads,epoch=model.epoch,pauses=model.scriptPauses,plays=model.plays;
+   __media.allowExistingBackground(audio);__hidden=true;document.dispatchEvent(new Event('visibilitychange'));
+   __media.externalPause(audio);await t.wait(45);__media.nativeStall(audio);
+   const storm=setInterval(()=>{__media.event(audio,'playing');document.dispatchEvent(new Event('visibilitychange'));window.dispatchEvent(new Event('focus'));},240);
+   try{await t.wait(6500)}finally{clearInterval(storm)}
+   t.assert(t.audio()===audio&&t.model().loads===loads&&t.model().epoch===epoch&&t.model().scriptPauses===pauses,'a native playing/visibility event storm must preserve the background player');
+   t.assert(t.model().plays===plays+1&&!t.model().audible,'repeated Playing without clock progress must not restart observation or create automatic retry loops');
+   t.assert(navigator.mediaSession.playbackState==='paused','event storms must not disguise a confirmed clock stall as Playing');
+ }''',
+ 'hidden_manual_pause_cancels_clock_observation': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);
+   const audio=t.audio(),model=t.model(),loads=model.loads,epoch=model.epoch;
+   __media.allowExistingBackground(audio);__hidden=true;document.dispatchEvent(new Event('visibilitychange'));
+   __media.externalPause(audio);await t.wait(45);__media.nativeStall(audio);await t.wait(2100);
+   t.pausePlayback();const plays=t.model().plays;await t.wait(4500);
+   t.assert(t.audio()===audio&&t.model().loads===loads&&t.model().epoch===epoch,'Pause during native clock grace must retain the original source and decoder');
+   t.assert(t.model().paused&&!t.model().audible&&t.model().plays===plays&&navigator.mediaSession.playbackState==='paused','manual Pause must cancel pending clock observation and every automatic play probe');
+ }''',
+ 'hidden_next_track_cancels_old_clock_observation': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);
+   const audio=t.audio();__media.allowExistingBackground(audio);__hidden=true;document.dispatchEvent(new Event('visibilitychange'));
+   __media.externalPause(audio);await t.wait(45);__media.nativeStall(audio);await t.wait(2100);
+   __command('nexttrack',{},true);await t.until(()=>t.state.currentTrack.id===2&&t.model().audible,'user Next starts the selected track during old clock grace',800);
+   const next=t.audio(),epoch=t.model().epoch,loads=t.model().loads,plays=t.model().plays;
+   await t.wait(4500);
+   t.assert(t.audio()===next&&t.state.currentTrack.id===2&&t.model().source.endsWith('test-B.wav'),'expired previous clock observation must not restore the old track');
+   t.assert(t.model().audible&&t.model().epoch===epoch&&t.model().loads===loads&&t.model().plays===plays&&t.model().position<6,'Next owns decoder and position while the old stalled episode expires');
+ }''',
  'native_resume_without_session_state_keeps_decoder': r'''async tracks=>{
    const t=__test;delete __session.state;await t.start(tracks);
    const audio=t.audio(),loads=t.model().loads,epoch=t.model().epoch;
