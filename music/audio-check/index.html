@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101827">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Проверка аудио iOS</title>
+<style>
+body{margin:0;background:#101827;color:#eef2ff;font:17px system-ui;line-height:1.5}main{max-width:650px;margin:auto;padding:24px 18px 60px}h1{font-size:25px}h2{font-size:20px}label{display:block;margin-top:18px}select,button,textarea{font:inherit;padding:12px;border-radius:10px;border:1px solid #718096;box-sizing:border-box}select,textarea,audio{width:100%}button{background:#dce8ff;color:#101827;margin:8px 5px 8px 0}button:disabled{opacity:.5}a{color:#abcaff}small{display:block;color:#bfcae0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;background:#182338;padding:12px;border-radius:10px}textarea{background:#182338;color:white;height:130px}#status{min-height:3em}ol{padding-left:24px}details{margin-top:20px}
+</style>
+<main>
+<h1>Проверка аудио iOS · 1</h1>
+<p>Здесь один плеер без автоматического восстановления. Проверяем, что происходит с буфером после паузы и микрофона.</p>
+<small id="environment"></small>
+<label>Источник<select id="source"><option value="hls">Тестовый HLS · 3 минуты</option><option value="file">Тот же звук в M4A · 3 минуты</option><option value="current">Текущий HLS из музыкальной библиотеки</option></select></label>
+<label>Управление<select id="mode"><option value="native">Штатный плеер браузера</option><option value="session">Простые команды Media Session</option></select></label>
+<small>В первом режиме команды шторки обрабатывает браузер. Во втором — только один play() или pause(). Смена режима перезагружает страницу.</small>
+<button id="prepare" disabled>Подготовить источник</button>
+<p id="status" role="status">Подготовка страницы…</p>
+<audio id="audio" controls playsinline preload="metadata"></audio>
+<div id="custom" hidden><button id="play">Play</button><button id="pause">Pause</button></div>
+<pre id="snapshot"></pre>
+<h2>Проверка на телефоне</h2>
+<ol><li>Подготовь источник и включи звук. Дай ему поиграть 10 секунд.</li><li>Открой шторку iOS. Нажми Pause, затем Play один раз. Оставь шторку открытой на 15 секунд.</li><li>Вернись сюда и отметь результат. Затем повторно подготовь источник для отдельной проверки микрофона.</li><li>Включи звук, перейди в приложение с голосовыми, запиши 10 секунд и закончи запись. Подожди 15 секунд, оставаясь в другом приложении.</li><li>Вернись сюда, отметь результат и скопируй отчёт. Повтори для M4A и текущего HLS.</li></ol>
+<small>Для сравнения PWA: в Safari выбери «Поделиться → На экран Домой» и открой добавленную «Audio Check». Каждую проверку начинай с кнопки «Подготовить источник».</small>
+<label>Что проверял<select id="scenario"><option value="widget">Pause / Play в шторке</option><option value="microphone">Возврат после микрофона</option><option value="background">Только переход в фон</option></select></label>
+<button data-result="audible">Звук продолжился</button><button data-result="silent">Была тишина</button><button data-result="foreground-only">Звук появился только при возврате</button>
+<button id="copy">Скопировать отчёт</button><button id="download">Скачать отчёт</button>
+<p id="exportStatus" role="status"></p>
+<details><summary>Отчёт для ручного копирования</summary><textarea id="report" readonly aria-label="Отчёт"></textarea></details>
+<details><summary>Что записывается</summary><p>Позиция, буфер, события плеера, видимость страницы и результат проверки на слух. Ссылки на треки, ключ подключения и названия треков в отчёт не попадают. Нативные HTTP-запросы HLS могут быть недоступны странице; для них нужен Web Inspector или системная трасса.</p></details>
+<p><a href="../">Вернуться к музыке</a></p>
+</main>
+<script src="check.js?v=1" defer></script>
+</html>
