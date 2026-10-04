@@ -75,15 +75,20 @@ STRICT_MEDIA = r'''(() => {
     if(v.clockFrozen&&v.wakeWith==='play'){v.clockFrozen=false;v.wakeWith=null}
     const mode=window.__media.next||v.next;window.__media.next=null;v.next=mode==='frozen'?'frozen':'ok';v.blocked=mode==='hold'||mode==='frozen';
     if(mode==='deny')return Promise.reject(new DOMException('Autoplay blocked','NotAllowedError'));if(mode==='expire')return Promise.reject(new DOMException('Bad URL','NotSupportedError'));
-    // Opt-in physical-trace reproduction: an already-loaded native decoder
-    // reports playing while its clock stays wedged despite rate commands.
-    // Loading a fresh native epoch clears the wedge; cold Play stays healthy.
+    // Model the older native admission ordering: activation is checked against
+    // the previous session state. A first Paused->Playing admission can leave
+    // the output inactive; re-admission while Playing activates it. This model
+    // tests the protocol only, not the actual iPhone audio route.
+    if(window.__media.inactiveRemoteSession&&document.hidden&&window.__remoteAction==='play'&&v.ready>=3){v.clockFrozen=v.paused;v.audible=false}
+    // Negative control: some native output failures survive both rate writes
+    // and renewed admission. Optimistic playing must not trigger endless
+    // retries or discard the background buffer.
     if(window.__media.remoteDecoderWedge&&document.hidden&&window.__remoteAction==='play'&&v.ready>=3){v.decoderWedged=true;v.clockFrozen=true;v.audible=false}
     v.paused=false;setTimeout(()=>event(this,'play'),0);if(mode==='promise-only'){finish(this);return Promise.resolve()}return new Promise((resolve,reject)=>{v.pending.push({resolve,reject});if(mode!=='hold'&&mode!=='frozen')finish(this)})
   };
   proto.pause=function(){if(this.tagName!=='AUDIO')return nativePause.call(this);const v=m(this);v.pauses++;if(!window.__media.externalOperation){v.scriptPauses++;if(window.__media.backgroundPolicy&&document.hidden&&!__gesture)v.backgroundRevoked=true}if(v.paused)return;v.paused=true;v.audible=false;v.pending.splice(0).forEach(p=>p.reject(new DOMException('Paused pending play','AbortError')));setTimeout(()=>event(this,'pause'),0)};
   proto.load=function(){if(this.tagName!=='AUDIO')return nativeLoad.call(this);const v=m(this);v.loads++;v.lastLoadGesture=__gesture;sourceLoad(this,v.source)};
-  window.__media={model:m,event,next:null,options:{},backgroundPolicy:false,externalOperation:false,remoteDecoderWedge:false,
+  window.__media={model:m,event,next:null,options:{},backgroundPolicy:false,externalOperation:false,remoteDecoderWedge:false,inactiveRemoteSession:false,
     allowExistingBackground(a){this.backgroundPolicy=true;const v=m(a);v.unlocked=true;v.backgroundRevoked=false},
     nativeStall(a,wakeWith=null){const v=m(a);v.paused=false;v.clockFrozen=true;v.audible=false;v.wakeWith=wakeWith;event(a,'playing')},
     releaseNativeStall(a){const v=m(a);v.clockFrozen=false;v.audible=!v.paused;event(a,'timeupdate')},
@@ -100,62 +105,74 @@ window.__test.model=()=>__media.model(__test.audio());
 window.__test.start=async(tracks)=>{await __test.playTrack(tracks[0],tracks);await __test.until(()=>__test.model().audible,'initial playing event');__media.advance(__test.audio(),43);await __test.wait()};'''
 
 SCENARIOS = {
- 'remote_manual_play_reloads_wedged_decoder_inside_activation': r'''async tracks=>{
+ 'remote_manual_play_readmits_without_discarding_loaded_audio': r'''async tracks=>{
    const t=__test;delete __session.state;await t.start(tracks);
    const audio=t.audio(),model=t.model(),source=model.source,loads=model.loads,epoch=model.epoch,rateWrites=model.rateWrites;
-   __media.allowExistingBackground(audio);__media.remoteDecoderWedge=true;
+   __media.allowExistingBackground(audio);__media.inactiveRemoteSession=true;
    __hidden=true;document.dispatchEvent(new Event('visibilitychange'));
    __media.advance(audio,5.45);__media.externalPause(audio);await t.wait(45);
    await audio.play();await t.until(()=>model.audible&&model.position>5.5,'native microphone-end resume advances without rebuilding its decoder',500);
-   t.assert(model.loads===loads&&model.epoch===epoch&&model.rateWrites===rateWrites,'successful automatic microphone resume must retain its original native player');
+   t.assert(model.loads===loads&&model.epoch===epoch&&model.rateWrites===rateWrites,'successful microphone resume retains its original native player');
    audio.playbackRate=1.25;__media.advance(audio,9.60);
    for(let cycle=0;cycle<3;cycle++){
      __command('pause',{},true);await t.wait(320);
-     t.assert(model.paused&&navigator.mediaSession.playbackState==='paused','each manual remote Pause is respected');
-     const position=model.position,priorLoads=model.loads,priorPlays=model.plays;
+     t.assert(model.paused&&navigator.mediaSession.playbackState==='paused','manual remote Pause is respected');
+     const position=model.position,seeks=model.seeks;
      __command('play',{},true);
-     const synchronous={audio:t.audio(),loads:model.loads,plays:model.plays,loadGesture:model.lastLoadGesture,playGesture:model.lastPlayGesture};
-     await t.until(()=>model.audible&&model.position>position+.05,'the rebuilt native decoder must restore its checkpoint and advance promptly',700);
-     t.assert(synchronous.audio===audio&&synchronous.loads===priorLoads+1&&synchronous.plays===priorPlays+1&&synchronous.loadGesture&&synchronous.playGesture,'manual background Play must load and play the original element synchronously before activation expires');
-     t.assert(model.source===source&&Math.abs(model.position-position)<1&&model.playbackRate===1.25&&!audio.muted&&audio.volume===1,'same-element restart preserves source, checkpoint, speed and normal gain');
-     const repairedLoads=model.loads,repairedEpoch=model.epoch;
-     __media.event(audio,'playing');__media.event(audio,'playing');await t.wait(20);
-     t.assert(model.loads===repairedLoads&&model.epoch===repairedEpoch,'duplicate playing notifications must not trigger another native reload');
+     t.assert(!model.clockFrozen&&model.lastPlayGesture,'native admission completes before the remote gesture expires');
+     await t.until(()=>model.audible&&model.position>position+.05,'remote resume advances the existing audio clock',700);
+     t.assert(t.audio()===audio&&model.loads===loads&&model.epoch===epoch&&model.seeks===seeks,'remote restart must preserve loaded data, decoder and position without load or seek');
+     t.assert(model.source===source&&Math.abs(model.position-position)<1&&model.playbackRate===1.25&&!audio.muted&&audio.volume===1,'source, checkpoint, speed and normal gain are preserved');
    }
-   t.assert(navigator.mediaSession.playbackState==='playing','healthy resumed clock restores the system Playing state');
  }''',
- 'remote_decoder_restart_is_not_applied_to_normal_ui_play': r'''async tracks=>{
-   const t=__test;await t.start(tracks);__media.remoteDecoderWedge=true;
+ 'remote_admission_is_not_applied_to_normal_ui_play': r'''async tracks=>{
+   const t=__test;await t.start(tracks);
    const audio=t.audio(),model=t.model(),writes=model.rateWrites,loads=model.loads,epoch=model.epoch;
-   t.pausePlayback();await t.wait(40);const position=model.position;
+   t.pausePlayback();await t.wait(40);const position=model.position,plays=model.plays;
    document.getElementById('miniPlayButton').click();
-   await t.until(()=>model.audible&&model.position>position+.05,'ordinary foreground UI Play advances without decoder replacement',500);
-   t.assert(model.rateWrites===writes&&t.audio()===audio&&model.loads===loads&&model.epoch===epoch,'UI Play must preserve the existing player without the system-only decoder restart');
+   await t.until(()=>model.audible&&model.position>position+.05,'foreground UI Play advances',500);
+   t.assert(model.plays===plays+1&&model.rateWrites===writes&&t.audio()===audio&&model.loads===loads&&model.epoch===epoch,'ordinary UI Play retains its single native request');
  }''',
- 'remote_pause_cancels_pending_cold_decoder_restart': r'''async tracks=>{
+ 'remote_pause_cancels_pending_admission': r'''async tracks=>{
    const t=__test;delete __session.state;await t.start(tracks);
-   const audio=t.audio(),model=t.model(),source=model.source;__media.allowExistingBackground(audio);__media.remoteDecoderWedge=true;
+   const audio=t.audio(),model=t.model(),loads=model.loads;__media.allowExistingBackground(audio);
    __hidden=true;document.dispatchEvent(new Event('visibilitychange'));__command('pause',{},true);await t.wait(320);
-   const checkpoint=model.position;model.playingDelay=150;
+   model.playingDelay=150;
    __command('play',{},true);await t.wait(50);__command('pause',{},true);await t.wait(125);
-   t.assert(navigator.mediaSession.playbackState==='paused'&&document.getElementById('playButton').getAttribute('aria-label')==='Воспроизвести','actual cold playing during manual Pause grace must not republish Playing');
+   t.assert(navigator.mediaSession.playbackState==='paused'&&document.getElementById('playButton').getAttribute('aria-label')==='Воспроизвести','late playing during Pause grace must not republish Playing');
    await t.wait(225);
-   t.assert(model.paused&&!model.audible&&navigator.mediaSession.playbackState==='paused','manual Pause must cancel the cold restart before its delayed playing event');
-   model.paused=false;__media.event(audio,'playing');__media.advance(audio,147);await t.wait(35);
-   t.assert(model.paused&&!model.audible&&document.getElementById('currentTime').textContent==='0:43','late native playing/timeupdate must not undo Pause or overwrite the frozen checkpoint');
-   model.playingDelay=16;__command('play',{},true);await t.until(()=>model.audible,'a fresh manual activation restarts after the cancelled cold player',700);
-   t.assert(t.audio()===audio&&model.source===source&&Math.abs(model.position-checkpoint)<1,'cancelled restart keeps the original element and pre-load checkpoint for the next Play');
+   t.assert(model.paused&&!model.audible&&navigator.mediaSession.playbackState==='paused','manual Pause cancels pending playback');
+   model.paused=false;__media.event(audio,'playing');await t.wait(35);
+   t.assert(model.paused&&!model.audible&&model.loads===loads,'late native playing must not undo Pause or reload the source');
  }''',
- 'remote_next_track_cancels_pending_cold_decoder_restart': r'''async tracks=>{
+ 'remote_next_track_cancels_pending_admission': r'''async tracks=>{
    const t=__test;delete __session.state;await t.start(tracks);
-   const audio=t.audio(),model=t.model();__media.allowExistingBackground(audio);__media.remoteDecoderWedge=true;
+   const audio=t.audio(),model=t.model();__media.allowExistingBackground(audio);
    __hidden=true;document.dispatchEvent(new Event('visibilitychange'));__command('pause',{},true);await t.wait(320);
-   model.metadataDelay=200;model.playingDelay=40;
+   model.playingDelay=150;
    __command('play',{},true);await t.wait(20);__command('nexttrack',{},true);
-   await t.until(()=>t.state.currentTrack.id===2&&t.model().audible,'Next owns playback while the old cold metadata is pending',700);
+   await t.until(()=>t.state.currentTrack.id===2&&t.model().audible,'Next supersedes the pending remote admission',700);
    const nextEpoch=model.epoch,nextLoads=model.loads;await t.wait(150);__media.event(audio,'playing');await t.wait(35);
-   t.assert(t.audio()===audio&&t.state.currentTrack.id===2&&model.source.endsWith('test-B.wav')&&model.position<1,'late old metadata cannot restore the previous source or seek its checkpoint onto Next');
-   t.assert(model.audible&&model.epoch===nextEpoch&&model.loads===nextLoads,'old cold-restart cleanup must not reload or pause the new track');
+   t.assert(t.audio()===audio&&t.state.currentTrack.id===2&&model.source.endsWith('test-B.wav')&&model.position<1,'old completion cannot seek the previous checkpoint onto Next');
+   t.assert(model.audible&&model.epoch===nextEpoch&&model.loads===nextLoads,'old cleanup cannot reload or pause Next');
+ }''',
+ 'remote_denial_does_not_repeat_play_or_reload': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);const audio=t.audio(),model=t.model();
+   __hidden=true;__command('pause',{},true);await t.wait(320);
+   const loads=model.loads,plays=model.plays;__media.next='deny';__command('play',{},true);await t.wait(80);
+   t.assert(model.loads===loads&&model.plays===plays+1&&model.paused,'denied admission stays paused without a second request or reload');
+   t.assert(JSON.parse(getMusicPlaybackDiagnostics()).events.some(e=>e.event==='resume-failed'&&e.detail==='NotAllowedError'),'native permission denial is recorded');
+ }''',
+ 'remote_persistent_native_failure_is_bounded_and_preserves_buffer': r'''async tracks=>{
+   const t=__test;delete __session.state;await t.start(tracks);const audio=t.audio(),model=t.model();
+   __media.allowExistingBackground(audio);__hidden=true;__command('pause',{},true);await t.wait(320);
+   const loads=model.loads,epoch=model.epoch,seeks=model.seeks;__media.remoteDecoderWedge=true;
+   __command('play',{},true);await t.wait(6500);
+   const report=JSON.parse(getMusicPlaybackDiagnostics());
+   t.assert(!model.audible&&report.events.some(e=>e.event==='background-clock-deferred'),'a native output that cannot be reactivated is reported as a stalled clock');
+   t.assert(model.loads===loads&&model.epoch===epoch&&model.seeks===seeks&&t.audio()===audio,'failed admission cannot discard the buffer or enter the observed metadata-seek deadlock');
+   const plays=model.plays;await t.wait(300);t.assert(model.plays===plays,'recovery does not loop indefinitely');
+   __command('pause',{},true);await t.wait(320);t.assert(model.paused&&!JSON.parse(getMusicPlaybackDiagnostics()).events.at(-1).wanted,'manual Pause stops even a persistently stalled attempt');
  }''',
  'remote_manual_play_during_known_capture_keeps_native_decoder': r'''async tracks=>{
    const t=__test;await t.start(tracks);const audio=t.audio(),model=t.model(),loads=model.loads,epoch=model.epoch;
@@ -182,6 +199,8 @@ SCENARIOS = {
    const last=JSON.parse(getMusicPlaybackDiagnostics()).events.at(-1);
    t.assert(last.wanted&&Math.abs(last.checkpoint-80)<.6&&navigator.mediaSession.playbackState==='paused','unchanged native clock after seek must remain stalled at the new80s checkpoint');
    t.assert(t.model().plays===plays+1,'seeking a stalled background player must not create another automatic wake probe');
+   // This scenario permits native recovery only once fresh control arrives.
+   model.wakeWith='play';
    __command('play',{},true);await t.until(()=>t.model().audible,'SystemPlay repairs at the user-selected checkpoint',800);
    t.assert(t.audio()===audio&&Math.abs(t.model().position-80)<.8,'control recovery restores the seek target, not the pre-seek interruption position');
  }''',
@@ -194,6 +213,8 @@ SCENARIOS = {
    t.assert(t.model().plays===plays+1&&navigator.mediaSession.playbackState==='paused','denied clock probe has no retry loop and provides a usable system Play');
    const diagnostic=JSON.parse(getMusicPlaybackDiagnostics()).events;
    t.assert(diagnostic.some(event=>event.event==='background-clock-wake-rejected'&&event.detail==='NotAllowedError')&&diagnostic.at(-1).wanted,'diagnostic must distinguish native denial from decoder corruption while preserving intent');
+   // This scenario permits native recovery only once fresh control arrives.
+   model.wakeWith='play';
    __command('play',{},true);await t.until(()=>t.model().audible,'a new control activation can recover after the denied native wake',800);
    t.assert(t.audio()===audio&&Math.abs(t.model().position-43)<.8,'new Control Play retains the original native element and checkpoint');
  }''',
@@ -203,6 +224,8 @@ SCENARIOS = {
    __media.allowExistingBackground(audio);__hidden=true;document.dispatchEvent(new Event('visibilitychange'));
    __media.externalPause(audio);await t.wait(45);__media.nativeStall(audio);__media.next='hold';
    await t.until(()=>t.model().plays===plays+1,'the background wake probe has begun',4000);await t.wait(35);
+   // This scenario permits native recovery only once fresh control arrives.
+   model.wakeWith='play';
    __command('play',{},true);await t.until(()=>t.model().audible,'fresh SystemPlay repairs without waiting for the old pending probe',800);
    t.assert(t.audio()===audio&&!t.model().backgroundRevoked&&Math.abs(t.model().position-43)<.8,'new control activation owns the original admitted decoder and checkpoint');
    const repairedEpoch=t.model().epoch,repairedLoads=t.model().loads,repairedPlays=t.model().plays;
@@ -254,7 +277,7 @@ SCENARIOS = {
    t.assert(t.model().plays===plays+1,'one stalled episode permits only one play-only probe');
    t.assert(navigator.mediaSession.playbackState==='playing','recovered original clock retains the system Playing state');
  }''',
- 'hidden_stall_defers_decoder_reset_until_explicit_system_play': r'''async tracks=>{
+ 'hidden_stall_preserves_decoder_on_explicit_system_play': r'''async tracks=>{
    const t=__test;delete __session.state;await t.start(tracks);
    const audio=t.audio(),model=t.model(),loads=model.loads,epoch=model.epoch,pauses=model.scriptPauses,plays=model.plays;
    __media.allowExistingBackground(audio);__hidden=true;document.dispatchEvent(new Event('visibilitychange'));
@@ -264,8 +287,9 @@ SCENARIOS = {
    t.assert(navigator.mediaSession.playbackState==='paused','confirmed stalled clock must offer Play in Control Center');
    const diagnostic=JSON.parse(getMusicPlaybackDiagnostics()).events.at(-1);
    t.assert(diagnostic.wanted&&Math.abs(diagnostic.checkpoint-43)<.6,'deferred background repair keeps playback intent and interruption checkpoint');
-   __command('play',{},true);await t.until(()=>t.model().audible&&t.model().position>=43,'fresh explicit SystemPlay can repair the existing admitted element',1700);
-   t.assert(t.audio()===audio&&t.model().loads>loads&&!t.model().backgroundRevoked,'confirmed stalled Control Play must reset the same original element while its activation is live');
+   model.wakeWith='play';
+   __command('play',{},true);await t.until(()=>t.model().audible&&t.model().position>=43,'fresh SystemPlay can re-admit the original element',1700);
+   t.assert(t.audio()===audio&&t.model().loads===loads&&!t.model().backgroundRevoked,'confirmed stalled Control Play must preserve the loaded original element');
    t.assert(Math.abs(t.model().position-43)<1&&navigator.mediaSession.playbackState==='playing','explicit recovery retains the capture checkpoint and updates the widget');
  }''',
  'hidden_long_probe_preserves_decoder_and_intent': r'''async tracks=>{
@@ -277,6 +301,8 @@ SCENARIOS = {
    t.assert(t.model().plays===plays+1&&!t.model().audible,'long pending background probe is bounded to one play call');
    const diagnostic=JSON.parse(getMusicPlaybackDiagnostics()).events.at(-1);
    t.assert(diagnostic.wanted&&Math.abs(diagnostic.checkpoint-43)<.6,'pending probe timeout retains the interruption checkpoint and resume intent');
+   // This scenario permits native recovery only once fresh control arrives.
+   model.wakeWith='play';
    __command('play',{},true);await t.until(()=>t.model().audible,'a fresh Control Center activation bypasses the old pending probe',1700);
    t.assert(t.audio()===audio&&Math.abs(t.model().position-43)<1,'new Control Play keeps original element and checkpoint after a timed out probe');
  }''',
@@ -616,9 +642,9 @@ async def native_checks(page):
     await page.evaluate('__nativeStage="foreground-control-play";window.__controlResumePosition=__test.elements.audio.currentTime;window.__controlResumeEventCount=__nativeEvents.length;__command("play",{},true)')
     await page.wait_for_function('!__test.elements.audio.paused&&__test.elements.audio.currentTime>__controlResumePosition+.05',timeout=5000)
     cc_play=await page.evaluate('({sameElement:__test.elements.audio===__resumeNativeAudio,sameSource:__test.elements.audio.getAttribute("src")===__resumeNativeSource,emptiedDuringResume:__nativeEvents.slice(__controlResumeEventCount).some(event=>event.type==="emptied")})')
-    # Real decoder exercise for the iOS manual-background-only restart. The
-    # document visibility and remote callback are simulated; WAV playback,
-    # load, metadata, seek restoration and clock progression are native.
+    # Real decoder exercise for manual background admission. Visibility and
+    # the remote callback are simulated; WAV playback and clock are native.
+    # Resume must preserve the loaded source without load/seek replacement.
     # Move far from the original43s interruption checkpoint so ordinary clock
     # progression cannot hide a stale checkpoint reused by the decoder.
     await page.evaluate('__nativeStage="distinct-control-seek";__command("seekto",{seekTime:80},true)')
@@ -630,7 +656,7 @@ async def native_checks(page):
     hidden_play=await page.evaluate('({sameElement:__test.elements.audio===__resumeNativeAudio,sameSource:__test.elements.audio.getAttribute("src")===__resumeNativeSource,position:__test.elements.audio.currentTime,checkpoint:__hiddenRestartPosition,speed:__test.elements.audio.playbackRate,previousSpeed:__hiddenRestartRate,volume:__test.elements.audio.volume,muted:__test.elements.audio.muted,emptied:__nativeEvents.slice(__hiddenRestartEventCount).some(event=>event.type==="emptied"),events:__nativeEvents.slice(-16)})')
     await page.evaluate('__nativeStage="next-track";__hidden=false;__command("nexttrack",{},true)')
     await page.wait_for_function('__test.state.currentTrack.id===2&&__test.elements.audio.currentTime>.1',timeout=5000)
-    checks={'played':not start['paused'] and start['position']>.2,'interruption_paused':interrupted['paused'],'resume_checkpoint':43<=resumed['position']<44,'full_element_volume':resumed['volume']==1 and not resumed['muted'],'native_resume_keeps_decoder':resumed['sameElement'] and resumed['sameSource'] and not resumed['emptiedDuringResume'],'system_pause':cc_pause['paused'],'system_play_keeps_decoder':cc_play['sameElement'] and cc_play['sameSource'] and not cc_play['emptiedDuringResume'],'hidden_manual_play_reloads_same_element':hidden_play['sameElement'] and hidden_play['sameSource'] and hidden_play['emptied'] and hidden_play['checkpoint']<=hidden_play['position']<hidden_play['checkpoint']+1 and hidden_play['speed']==hidden_play['previousSpeed'] and hidden_play['volume']==1 and not hidden_play['muted']}
+    checks={'played':not start['paused'] and start['position']>.2,'interruption_paused':interrupted['paused'],'resume_checkpoint':43<=resumed['position']<44,'full_element_volume':resumed['volume']==1 and not resumed['muted'],'native_resume_keeps_decoder':resumed['sameElement'] and resumed['sameSource'] and not resumed['emptiedDuringResume'],'system_pause':cc_pause['paused'],'system_play_keeps_decoder':cc_play['sameElement'] and cc_play['sameSource'] and not cc_play['emptiedDuringResume'],'hidden_manual_play_preserves_loaded_element':hidden_play['sameElement'] and hidden_play['sameSource'] and not hidden_play['emptied'] and hidden_play['checkpoint']<=hidden_play['position']<hidden_play['checkpoint']+1 and hidden_play['speed']==hidden_play['previousSpeed'] and hidden_play['volume']==1 and not hidden_play['muted']}
     return {'start':start,'interrupted':interrupted,'resumed':resumed,'control_center_handler_pause':cc_pause,'control_center_handler_play':cc_play,'hidden_control_center_restart':hidden_play,'checks':checks,'nativeAudio':True,'audioSession':'simulated','systemControlCenter':'handler invocation, not physical iOS','audibleOutput':'not measured; HTMLAudioElement events/time progression only'}
 
 async def main(engines, case_patterns):

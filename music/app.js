@@ -871,6 +871,7 @@ let pendingAudioReplacement = null;
 let foregroundRepairPending = false;
 const playbackRun = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 const diagnosticAudioIds = new WeakMap();
+const diagnosticLifecycleEvents = new WeakMap();
 let nextDiagnosticAudioId = 0;
 const storedPlaybackEvents = readJson(PLAYBACK_DIAGNOSTICS_KEY, []);
 const playbackEvents = Array.isArray(storedPlaybackEvents) ? storedPlaybackEvents.slice(-80) : [];
@@ -884,16 +885,50 @@ function audioSessionState() {
   if (!navigator.audioSession) return "unsupported";
   return navigator.audioSession.state || "unavailable";
 }
+function diagnosticAudioSessionType() {
+  try {
+    if (!navigator.audioSession) return "unsupported";
+    const type = navigator.audioSession.type;
+    return ["auto", "playback", "transient", "transient-solo", "ambient", "play-and-record"].includes(type) ? type : "unavailable";
+  } catch { return "unavailable"; }
+}
+function diagnosticTimeRanges(audio, property) {
+  const result = [];
+  try {
+    // A timed range is not meaningful before metadata. Avoid querying the
+    // native buffering/seek state while a new resource is still being opened.
+    if (audio.readyState < 1) return result;
+    const ranges = audio[property];
+    const length = Math.min(3, Math.max(0, Math.floor(ranges.length)));
+    for (let index = 0; index < length; index += 1) {
+      try {
+        const start = ranges.start(index), end = ranges.end(index);
+        if (Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end >= start) result.push([Number(start.toFixed(3)), Number(end.toFixed(3))]);
+      } catch { /* A range can disappear while the native resource changes. */ }
+    }
+  } catch { /* Resource diagnostics must not affect playback. */ }
+  return result;
+}
+function diagnosticAudioResource(audio) {
+  let duration = null, networkState = null, sourceKind = "unknown";
+  try { if (Number.isFinite(audio.duration) && audio.duration >= 0) duration = Number(audio.duration.toFixed(3)); } catch { /* Optional diagnostic only. */ }
+  try { if (Number.isInteger(audio.networkState) && audio.networkState >= 0 && audio.networkState <= 3) networkState = audio.networkState; } catch { /* Optional diagnostic only. */ }
+  try {
+    const extension = new URL(audio.currentSrc || audio.getAttribute("src"), location.href).pathname.split(".").pop().toLowerCase();
+    if (["m3u8", "mp3", "m4a", "aac", "wav", "ogg", "webm"].includes(extension)) sourceKind = extension;
+  } catch { /* Record only a format label, never a source URL. */ }
+  return { networkState, duration, sourceKind, sessionType: diagnosticAudioSessionType(), buffered: diagnosticTimeRanges(audio, "buffered"), seekable: diagnosticTimeRanges(audio, "seekable") };
+}
 
-function recordPlaybackEvent(event, detail = "") {
+function recordPlaybackEvent(event, detail = "", resource = null) {
   const audio = elements.audio;
   if (!diagnosticAudioIds.has(audio)) diagnosticAudioIds.set(audio, ++nextDiagnosticAudioId);
-  playbackEvents.push({ time: Date.now(), run: playbackRun, event, detail, audioId: diagnosticAudioIds.get(audio), session: audioSessionState(), hidden: document.hidden, wanted: playbackWanted, interrupted: interruptedPlayback, mediaState: navigator.mediaSession?.playbackState || "none", position: Math.round((audio.currentTime || 0) * 100) / 100, checkpoint: interruptionPosition ?? savedPlaybackPosition, paused: audio.paused, readyState: audio.readyState, seeking: audio.seeking, playbackRate: audio.playbackRate, clockStage: playbackClockWatch?.stage || "none", clockStalled: playbackClockStalled, errorCode: audio.error?.code || null, muted: audio.muted, volume: audio.volume });
+  playbackEvents.push({ time: Date.now(), run: playbackRun, event, detail, audioId: diagnosticAudioIds.get(audio), session: audioSessionState(), hidden: document.hidden, wanted: playbackWanted, interrupted: interruptedPlayback, mediaState: navigator.mediaSession?.playbackState || "none", position: Math.round((audio.currentTime || 0) * 100) / 100, checkpoint: interruptionPosition ?? savedPlaybackPosition, paused: audio.paused, readyState: audio.readyState, seeking: audio.seeking, playbackRate: audio.playbackRate, clockStage: playbackClockWatch?.stage || "none", clockStalled: playbackClockStalled, errorCode: audio.error?.code || null, muted: audio.muted, volume: audio.volume, ...(resource || diagnosticAudioResource(audio)) });
   if (playbackEvents.length > 80) playbackEvents.shift();
   persistPlaybackEvents();
 }
 // No keys, URLs or track metadata: useful for diagnosing native event ordering.
-window.getMusicPlaybackDiagnostics = () => JSON.stringify({ version: 66, run: playbackRun, userAgent: navigator.userAgent, events: playbackEvents }, null, 2);
+window.getMusicPlaybackDiagnostics = () => JSON.stringify({ version: 67, run: playbackRun, userAgent: navigator.userAgent, events: playbackEvents }, null, 2);
 recordPlaybackEvent("page-start");
 window.addEventListener("pagehide", () => recordPlaybackEvent("page-hide"));
 window.addEventListener("pageshow", () => recordPlaybackEvent("page-show"));
@@ -1006,7 +1041,7 @@ function handleMediaPause() {
   mediaPauseTimer = setTimeout(settlePause, 250);
 }
 
-function playWithTimeout(audio, signal) {
+function playWithTimeout(audio, signal, readmitSystemPlayback = false) {
   let timer;
   let abort;
   const cancelled = new Promise((_, reject) => {
@@ -1014,10 +1049,20 @@ function playWithTimeout(audio, signal) {
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) abort();
   });
+  const started = audio.play();
+  // Older WebKit checks whether an active audio session is required BEFORE
+  // moving the element's native session from Paused to Playing. A second
+  // admission, still inside the explicit remote gesture, can activate that
+  // now-Playing session. Keep the loaded resource and observe both promises.
+  let admitted = started;
+  if (readmitSystemPlayback && !signal?.aborted && !audio.paused && audio.readyState >= 2) {
+    recordPlaybackEvent("system-play-readmit");
+    admitted = audio.play();
+  }
   return Promise.race([
-    audio.play(),
+    Promise.all([started, admitted]),
     cancelled,
-    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Playback timed out")), 8000); }),
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new DOMException("Playback timed out", "PlaybackTimeoutError")), 8000); }),
   ]).finally(() => { clearTimeout(timer); signal?.removeEventListener("abort", abort); });
 }
 function waitForAudio(audio, events, ready, signal) {
@@ -1030,7 +1075,7 @@ function waitForAudio(audio, events, ready, signal) {
     events.forEach((event) => audio.addEventListener(event, check));
     audio.addEventListener("error", fail, { once: true });
     signal.addEventListener("abort", abort, { once: true });
-    timer = setTimeout(() => { clean(); reject(new Error("Audio readiness timed out")); }, 8000);
+    timer = setTimeout(() => { clean(); reject(new DOMException("Audio readiness timed out", "ReadinessTimeoutError")); }, 8000);
     if (signal.aborted) abort(); else check();
   });
 }
@@ -1102,7 +1147,7 @@ async function reloadPlayback(source, position, isCurrent, signal, fresh = false
     loadController.abort();
   }
 }
-async function continueExistingPlayback(audio, position, restorePosition, signal) {
+async function continueExistingPlayback(audio, position, restorePosition, signal, readmitSystemPlayback = false) {
   const controller = new AbortController();
   const abort = () => controller.abort();
   signal.addEventListener("abort", abort, { once: true });
@@ -1126,7 +1171,7 @@ async function continueExistingPlayback(audio, position, restorePosition, signal
     const playing = waitForAudio(audio, ["playing"], () => actuallyPlaying, controller.signal);
     // Preserve the existing native player and call play in the control gesture.
     // pause()/load() here can deactivate iOS background audio before it resumes.
-    const started = playWithTimeout(audio, controller.signal);
+    const started = playWithTimeout(audio, controller.signal, readmitSystemPlayback);
     await Promise.all([started, playing, positioned]);
   } finally {
     audio.removeEventListener("playing", onPlaying);
@@ -1232,10 +1277,8 @@ function schedulePlaybackWatchdog() {
 }
 
 function resumePlayback(force = false, fresh = false, fromControl = false, fromSystem = false) {
-  // iOS can admit a remote Play while the paused native decoder's clock stays
-  // frozen. Rebuild that decoder in the explicit control gesture on the same
-  // unlocked element. Native microphone auto-resume retains wanted=true.
-  const restartSystemPlayback = fromSystem && isIOS && document.hidden && !playbackWanted && elements.audio.paused && navigator.audioSession?.state !== "interrupted";
+  const readmitSystemPlayback = fromSystem && isIOS && document.hidden &&
+    (!playbackWanted || playbackClockStalled) && navigator.audioSession?.state !== "interrupted";
   playbackWanted = true;
   clearPendingMediaPause();
   recentMediaPause = null;
@@ -1263,11 +1306,10 @@ function resumePlayback(force = false, fresh = false, fromControl = false, fromS
   const controller = new AbortController();
   recoveryController = controller;
   const isCurrent = () => attempt === resumeAttempt && playbackWanted && state.currentTrack === track && !controller.signal.aborted;
-  // An interruption restores its checkpoint on the existing decoder. Explicit
-  // iOS remote restart after manual Pause, or a confirmed error/stall, can
-  // reload the original synchronously inside the fresh control callback.
-  // Automatic background recovery must keep its native player intact.
-  const resetOutput = (force || restartSystemPlayback || (fromControl && playbackClockStalled)) && (!document.hidden || fromControl);
+  // The iPhone trace showed background load()+seek stuck at HAVE_METADATA for
+  // minutes until foregrounding. Even an explicit remote gesture must retain
+  // the loaded player. Rebuilding a failed decoder is a foreground fallback.
+  const resetOutput = (force || (fromControl && playbackClockStalled)) && !document.hidden;
   const restorePosition = outputNeedsReset || interruptionPosition !== null;
   if (resetOutput || restorePosition) {
     // A replacement may have currentTime=0 until metadata arrives. Never let
@@ -1280,13 +1322,12 @@ function resumePlayback(force = false, fresh = false, fromControl = false, fromS
   let preserveNativeInterruption = false;
   const promise = new Promise((resolve) => { resolveResume = resolve; });
   resumePromise = promise;
-  if (restartSystemPlayback) recordPlaybackEvent("system-play-restart");
   recordPlaybackEvent("resume", resetOutput ? "repair" : "play");
   void (async () => {
     try {
       try {
         if (resetOutput) await reloadPlayback(source, position, isCurrent, controller.signal, fresh && !document.hidden);
-        else await continueExistingPlayback(audio, position, restorePosition, controller.signal);
+        else await continueExistingPlayback(audio, position, restorePosition, controller.signal, readmitSystemPlayback);
       } catch (error) {
         if (!isCurrent()) return false;
         const sessionState = navigator.audioSession?.state;
@@ -1414,6 +1455,23 @@ function seekPlayback(position) {
 }
 function bindAudioEvents(audio) {
   const current = () => elements.audio === audio;
+  for (const event of ["loadstart", "loadedmetadata", "canplay", "waiting", "seeking", "seeked", "suspend", "stalled", "emptied", "abort"]) {
+    audio.addEventListener(event, () => {
+      if (!current()) return;
+      const resource = diagnosticAudioResource(audio);
+      // Native waiting/suspend notifications can repeat without a state change.
+      // Keep transitions and all seek/load ordering without flooding the ring.
+      if (["canplay", "waiting", "suspend"].includes(event)) {
+        let recent = diagnosticLifecycleEvents.get(audio);
+        if (!recent) diagnosticLifecycleEvents.set(audio, recent = new Map());
+        const signature = JSON.stringify([audio.readyState, audio.paused, audio.seeking, resource]);
+        const previous = recent.get(event), now = Date.now();
+        if (previous?.signature === signature && now - previous.time < 1000) return;
+        recent.set(event, { signature, time: now });
+      } else if (event === "loadstart") diagnosticLifecycleEvents.delete(audio);
+      recordPlaybackEvent(`audio-${event}`, "", resource);
+    });
+  }
   audio.addEventListener("playing", () => {
     if (!current()) return;
     recordPlaybackEvent("audio-playing");
@@ -1525,6 +1583,7 @@ elements.setupForm.addEventListener("submit", async (event) => {
 elements.settingsButton.addEventListener("click", openSettings);
 elements.playbackDiagnosticsButton.addEventListener("click", async () => {
   try {
+    recordPlaybackEvent("diagnostics-copy");
     await navigator.clipboard.writeText(window.getMusicPlaybackDiagnostics());
     elements.playbackDiagnosticsStatus.textContent = "Диагностика скопирована. Ключ доступа и ссылки на треки в неё не входят.";
   } catch {
