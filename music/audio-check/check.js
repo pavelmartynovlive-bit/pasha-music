@@ -3,13 +3,15 @@ const $ = id => document.getElementById(id);
 const audio = $("audio");
 const params = new URLSearchParams(location.search);
 const defaultSessionExperiment = location.pathname.endsWith("/default-session.html");
+const videoElementExperiment = location.pathname.endsWith("/video-element.html");
+const untouchedSession = defaultSessionExperiment || videoElementExperiment;
 const initialSessionType = navigator.audioSession?.type || "unavailable";
 const categoryExperiment = location.pathname.endsWith("/session-reset.html");
-const mode = !defaultSessionExperiment && (categoryExperiment || params.get("mode") === "session") && navigator.mediaSession ? "session" : "native";
+const mode = !untouchedSession && (categoryExperiment || params.get("mode") === "session") && navigator.mediaSession ? "session" : "native";
 if (!navigator.mediaSession) $("mode").querySelector('[value="session"]').disabled = true;
 $("mode").value = mode;
-if (categoryExperiment || defaultSessionExperiment) $("mode").disabled = true;
-if (categoryExperiment || defaultSessionExperiment) $("source").value = "file";
+if (categoryExperiment || untouchedSession) $("mode").disabled = true;
+if (categoryExperiment || untouchedSession) $("source").value = "file";
 if (["hls", "file", "current"].includes(params.get("source"))) $("source").value = params.get("source");
 const run = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 const storeKey = "pashaAudioCheckReportsV1";
@@ -26,7 +28,7 @@ function snapshot() {
   return { hidden: document.hidden, paused: audio.paused, position: +audio.currentTime.toFixed(3), duration: Number.isFinite(audio.duration) ? audio.duration : null, readyState: audio.readyState, networkState: audio.networkState, seeking: audio.seeking, playbackRate: audio.playbackRate, muted: audio.muted, volume: audio.volume, buffered: ranges(audio.buffered), seekable: ranges(audio.seekable), errorCode: audio.error?.code || null, sessionType: navigator.audioSession?.type || "unavailable", sessionState: navigator.audioSession?.state || "unavailable" };
 }
 function currentReport() {
-  return { version: 3, experiment: defaultSessionExperiment ? "default-audio-session" : categoryExperiment ? "category-reset-on-system-play" : "baseline", sessionTypePolicy: defaultSessionExperiment ? "untouched" : "explicit-playback", initialSessionType, run, trial, mode, source: selectedSource, mediaSessionSupported: !!navigator.mediaSession, userAgent: navigator.userAgent, standalone: navigator.standalone === true || matchMedia("(display-mode: standalone)").matches, events };
+  return { version: 4, experiment: videoElementExperiment ? "video-element" : defaultSessionExperiment ? "default-audio-session" : categoryExperiment ? "category-reset-on-system-play" : "baseline", mediaElement: audio.tagName.toLowerCase(), playsInline: audio.hasAttribute("playsinline"), sessionTypePolicy: untouchedSession ? "untouched" : "explicit-playback", initialSessionType, run, trial, mode, source: selectedSource, mediaSessionSupported: !!navigator.mediaSession, userAgent: navigator.userAgent, standalone: navigator.standalone === true || matchMedia("(display-mode: standalone)").matches, events };
 }
 function persist() {
   try { localStorage.setItem(storeKey, JSON.stringify([...history, currentReport()].slice(-6))); } catch {}
@@ -73,7 +75,7 @@ function play(origin) {
   if (categoryExperiment && origin === "system") resetCategory();
 }
 function pause(origin) { restoreCategory("pause"); record("pause-call", origin); audio.pause(); }
-try { if (!defaultSessionExperiment && navigator.audioSession) navigator.audioSession.type = "playback"; } catch { record("session-type-unavailable"); }
+try { if (!untouchedSession && navigator.audioSession) navigator.audioSession.type = "playback"; } catch { record("session-type-unavailable"); }
 // Native baseline deliberately installs no MediaSession handlers or state setters.
 if (mode === "session" && navigator.mediaSession) {
   $("custom").hidden = false;
@@ -158,7 +160,7 @@ for (const button of document.querySelectorAll("[data-result]")) button.onclick 
 };
 function exportReport() {
   record("export");
-  const report = JSON.stringify({ version: 3, reports: [...history, currentReport()].slice(-6) }, null, 2);
+  const report = JSON.stringify({ version: 4, reports: [...history, currentReport()].slice(-6) }, null, 2);
   $("report").value = report;
   return report;
 }
@@ -171,7 +173,7 @@ $("download").onclick = () => {
   const url = URL.createObjectURL(new Blob([exportReport()], { type: "application/json" }));
   const link = document.createElement("a"); link.href = url; link.download = `audio-check-${run}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
 };
-$("environment").textContent = `${navigator.standalone || matchMedia("(display-mode: standalone)").matches ? "PWA" : "Вкладка браузера"} · ${mode === "native" ? "штатное управление" : "Media Session"}${defaultSessionExperiment ? " · категория по умолчанию" : categoryExperiment ? " · однократная смена категории" : ""}`;
+$("environment").textContent = `${navigator.standalone || matchMedia("(display-mode: standalone)").matches ? "PWA" : "Вкладка браузера"} · ${mode === "native" ? "штатное управление" : "Media Session"}${untouchedSession ? " · категория по умолчанию" : categoryExperiment ? " · однократная смена категории" : ""}${videoElementExperiment ? " · video" : ""}`;
 record("page-start");
 (async () => {
   try {

@@ -84,3 +84,19 @@ initial category and observed category on every event. Do not reset the category
 to auto: that would introduce a second intervention. Compare the same M4A in
 standalone mode with the previous explicit-playback trial. No recovery actions
 are added. Physical iPhone results are required to evaluate this hypothesis.
+
+## Video element experiment
+
+`video-element.html` compares a visible `<video controls playsinline>` with the
+previous `<audio controls playsinline>` default-category baseline. It starts the
+same `reference.m4a` (audio-only AAC, no added video track), does not write
+AudioSession.type and installs no Media Session handlers. Separate Video Check
+manifest launches this page directly. Visibility is deliberate: `display:none`
+would introduce another lifecycle condition. No keepalive, seeks, element
+replacement, reload-on-resume or background retries are added. Report version 4
+identifies `experiment=video-element`, `mediaElement=video` and `playsInline=true`.
+Event names retain the audio- prefix for compatibility with previous reports.
+A passing test would support a tag-dependent workaround in this configuration;
+it would not prove an internal AVFoundation mechanism or production HLS safety.
+First test Control Center on iPhone; if successful, repeat and test microphone
+recovery, then HLS separately. Desktop playback only validates page wiring.
