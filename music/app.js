@@ -893,7 +893,7 @@ function recordPlaybackEvent(event, detail = "") {
   persistPlaybackEvents();
 }
 // No keys, URLs or track metadata: useful for diagnosing native event ordering.
-window.getMusicPlaybackDiagnostics = () => JSON.stringify({ version: 65, run: playbackRun, userAgent: navigator.userAgent, events: playbackEvents }, null, 2);
+window.getMusicPlaybackDiagnostics = () => JSON.stringify({ version: 66, run: playbackRun, userAgent: navigator.userAgent, events: playbackEvents }, null, 2);
 recordPlaybackEvent("page-start");
 window.addEventListener("pagehide", () => recordPlaybackEvent("page-hide"));
 window.addEventListener("pageshow", () => recordPlaybackEvent("page-show"));
@@ -1036,6 +1036,7 @@ function waitForAudio(audio, events, ready, signal) {
 }
 async function reloadPlayback(source, position, isCurrent, signal, fresh = false) {
   let audio = elements.audio;
+  const rate = audio.playbackRate || 1;
   let oldAudio = null;
   const loadController = new AbortController();
   const abort = () => loadController.abort();
@@ -1063,8 +1064,9 @@ async function reloadPlayback(source, position, isCurrent, signal, fresh = false
   let actuallyPlaying = false;
   const onPlaying = () => { actuallyPlaying = true; };
   audio.addEventListener("playing", onPlaying);
-  audio.src = source;
+  if (audio.getAttribute("src") !== source) audio.src = source;
   audio.load();
+  if (audio.playbackRate !== rate) audio.playbackRate = rate;
   const metadata = waitForAudio(audio, ["loadedmetadata", "durationchange"], () => audio.readyState >= 1, loadController.signal);
   const playing = waitForAudio(audio, ["playing"], () => actuallyPlaying, loadController.signal);
   // Invoke play inside the system/user callback, before any await or network I/O.
@@ -1100,7 +1102,7 @@ async function reloadPlayback(source, position, isCurrent, signal, fresh = false
     loadController.abort();
   }
 }
-async function continueExistingPlayback(audio, position, restorePosition, signal, wakeRemoteResume = false) {
+async function continueExistingPlayback(audio, position, restorePosition, signal) {
   const controller = new AbortController();
   const abort = () => controller.abort();
   signal.addEventListener("abort", abort, { once: true });
@@ -1109,18 +1111,7 @@ async function continueExistingPlayback(audio, position, restorePosition, signal
   audio.muted = false;
   audio.volume = 1;
   let actuallyPlaying = !audio.paused && audio.readyState >= 3 && !audio.seeking;
-  let rateReissued = false;
-  const wakeNativePlayer = () => {
-    if (!wakeRemoteResume || rateReissued || controller.signal.aborted || elements.audio !== audio || !playbackWanted || pendingMediaPause) return;
-    // The system Play can resolve and emit playing before AVPlayer's clock
-    // runs. Reissue the same rate AFTER Play, without pausing or changing src.
-    rateReissued = true;
-    try {
-      audio.playbackRate = audio.playbackRate || 1;
-      recordPlaybackEvent("system-play-rate-wake");
-    } catch { recordPlaybackEvent("system-play-rate-wake-unavailable"); }
-  };
-  const onPlaying = () => { actuallyPlaying = true; wakeNativePlayer(); };
+  const onPlaying = () => { actuallyPlaying = true; };
   audio.addEventListener("playing", onPlaying);
   try {
     const metadata = restorePosition ? waitForAudio(audio, ["loadedmetadata", "durationchange"], () => audio.readyState >= 1, controller.signal) : Promise.resolve();
@@ -1135,7 +1126,7 @@ async function continueExistingPlayback(audio, position, restorePosition, signal
     const playing = waitForAudio(audio, ["playing"], () => actuallyPlaying, controller.signal);
     // Preserve the existing native player and call play in the control gesture.
     // pause()/load() here can deactivate iOS background audio before it resumes.
-    const started = playWithTimeout(audio, controller.signal).then(() => { if (actuallyPlaying) wakeNativePlayer(); });
+    const started = playWithTimeout(audio, controller.signal);
     await Promise.all([started, playing, positioned]);
   } finally {
     audio.removeEventListener("playing", onPlaying);
@@ -1241,9 +1232,10 @@ function schedulePlaybackWatchdog() {
 }
 
 function resumePlayback(force = false, fresh = false, fromControl = false, fromSystem = false) {
-  // Native automatic Play and user Play share the MediaSession callback. Limit
-  // the extra rate command to a restart after a confirmed manual Pause.
-  const wakeRemoteResume = fromSystem && !playbackWanted && elements.audio.paused;
+  // iOS can admit a remote Play while the paused native decoder's clock stays
+  // frozen. Rebuild that decoder in the explicit control gesture on the same
+  // unlocked element. Native microphone auto-resume retains wanted=true.
+  const restartSystemPlayback = fromSystem && isIOS && document.hidden && !playbackWanted && elements.audio.paused && navigator.audioSession?.state !== "interrupted";
   playbackWanted = true;
   clearPendingMediaPause();
   recentMediaPause = null;
@@ -1271,11 +1263,11 @@ function resumePlayback(force = false, fresh = false, fromControl = false, fromS
   const controller = new AbortController();
   recoveryController = controller;
   const isCurrent = () => attempt === resumeAttempt && playbackWanted && state.currentTrack === track && !controller.signal.aborted;
-  // An interruption needs its checkpoint restored, not a new decoder. Only
-  // a confirmed error/stall requests pause/load or replacement.
-  // A fresh native control callback can reload a confirmed stalled original
-  // synchronously. Automatic background recovery must keep its player intact.
-  const resetOutput = (force || (fromControl && playbackClockStalled)) && (!document.hidden || fromControl);
+  // An interruption restores its checkpoint on the existing decoder. Explicit
+  // iOS remote restart after manual Pause, or a confirmed error/stall, can
+  // reload the original synchronously inside the fresh control callback.
+  // Automatic background recovery must keep its native player intact.
+  const resetOutput = (force || restartSystemPlayback || (fromControl && playbackClockStalled)) && (!document.hidden || fromControl);
   const restorePosition = outputNeedsReset || interruptionPosition !== null;
   if (resetOutput || restorePosition) {
     // A replacement may have currentTime=0 until metadata arrives. Never let
@@ -1288,12 +1280,13 @@ function resumePlayback(force = false, fresh = false, fromControl = false, fromS
   let preserveNativeInterruption = false;
   const promise = new Promise((resolve) => { resolveResume = resolve; });
   resumePromise = promise;
+  if (restartSystemPlayback) recordPlaybackEvent("system-play-restart");
   recordPlaybackEvent("resume", resetOutput ? "repair" : "play");
   void (async () => {
     try {
       try {
         if (resetOutput) await reloadPlayback(source, position, isCurrent, controller.signal, fresh && !document.hidden);
-        else await continueExistingPlayback(audio, position, restorePosition, controller.signal, wakeRemoteResume);
+        else await continueExistingPlayback(audio, position, restorePosition, controller.signal);
       } catch (error) {
         if (!isCurrent()) return false;
         const sessionState = navigator.audioSession?.state;
