@@ -1,8 +1,8 @@
 const CACHE_PREFIX = "pasha-music-github-pages-";
-const CACHE = `${CACHE_PREFIX}v76`;
+const CACHE = `${CACHE_PREFIX}v77`;
 // Animations enter the cache when the page needs them. Preloading both during
 // installation would compete with the first visible image and the app shell.
-const APP_SHELL = ["./", "./music/", "./music/app.js?v=64", "./music/artist.css?v=1", "./music/assets/cat-poster.webp?v=1", "./styles.css?v=64", "./manifest.webmanifest?v=2", "./icons/icon-180.png?v=2", "./icons/icon-192.png?v=2", "./icons/icon-512.png?v=2"];
+const APP_SHELL = ["./", "./music/", "./music/app.js?v=65", "./music/artist.css?v=1", "./music/assets/cat-poster.webp?v=1", "./styles.css?v=64", "./manifest.webmanifest?v=2", "./icons/icon-180.png?v=2", "./icons/icon-192.png?v=2", "./icons/icon-512.png?v=2"];
 const NAVIGATION_TIMEOUT = 1500;
 const REUSABLE_ANIMATIONS = ["./music/assets/cat-idle.webp?v=5", "./music/assets/cat-playing.webp?v=6"];
 
