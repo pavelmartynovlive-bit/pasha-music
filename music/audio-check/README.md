@@ -100,3 +100,15 @@ A passing test would support a tag-dependent workaround in this configuration;
 it would not prove an internal AVFoundation mechanism or production HLS safety.
 First test Control Center on iPhone; if successful, repeat and test microphone
 recovery, then HLS separately. Desktop playback only validates page wiring.
+
+## Hidden video experiment
+
+`hidden-video.html` uses the same video element and M4A as Video Check, with
+`display:none`. Separate Video Hidden manifest launches it directly. Page Play
+and Pause buttons each make one synchronous native call; both visible and hidden
+video pages expose these buttons for a matched initial launch. Neither registers
+Media Session handlers or changes the audio session category. Use the page Play
+button for the initial launch; subsequent commands must come from Control Center.
+Report v5 captures `experiment=hidden-video` and computed `mediaDisplay=none`.
+If initial playback or system controls are unavailable, record that separately
+from a frozen clock after remote Play. No keepalive or repairs are introduced.

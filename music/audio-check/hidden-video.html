@@ -4,17 +4,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#101827">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="manifest" href="video-element.webmanifest">
-<title>Video Check · проверка PWA</title>
+<link rel="manifest" href="hidden-video.webmanifest">
+<title>Video Hidden · проверка PWA</title>
 <style>
-body{margin:0;background:#101827;color:#eef2ff;font:17px system-ui;line-height:1.5}main{max-width:650px;margin:auto;padding:24px 18px 60px}h1{font-size:25px}h2{font-size:20px}label{display:block;margin-top:18px}select,button,textarea{font:inherit;padding:12px;border-radius:10px;border:1px solid #718096;box-sizing:border-box}select,textarea,video{width:100%}video{height:96px;background:#000;display:block}button{background:#dce8ff;color:#101827;margin:8px 5px 8px 0}button:disabled{opacity:.5}a{color:#abcaff}small{display:block;color:#bfcae0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;background:#182338;padding:12px;border-radius:10px}textarea{background:#182338;color:white;height:130px}#status{min-height:3em}ol{padding-left:24px}details{margin-top:20px}
+body{margin:0;background:#101827;color:#eef2ff;font:17px system-ui;line-height:1.5}main{max-width:650px;margin:auto;padding:24px 18px 60px}h1{font-size:25px}h2{font-size:20px}label{display:block;margin-top:18px}select,button,textarea{font:inherit;padding:12px;border-radius:10px;border:1px solid #718096;box-sizing:border-box}select,textarea,video{width:100%}video{height:96px;background:#000;display:none}button{background:#dce8ff;color:#101827;margin:8px 5px 8px 0}button:disabled{opacity:.5}a{color:#abcaff}small{display:block;color:#bfcae0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;background:#182338;padding:12px;border-radius:10px}textarea{background:#182338;color:white;height:130px}#status{min-height:3em}ol{padding-left:24px}details{margin-top:20px}
 </style>
 <main>
-<h1>Проверка video · 4</h1>
-<p>Тот же тестовый M4A играет через video вместо audio. Категория аудиосессии по умолчанию и штатное управление сохранены. В файле только звук, поэтому чёрное поле нормально.</p>
+<h1>Скрытый video · 5</h1>
+<p>Тот же video и тестовый M4A, но элемент скрыт через display: none. Для запуска используй кнопку Play ниже. Команды шторки обрабатывает браузер; категория аудиосессии остаётся по умолчанию.</p>
 <small id="environment"></small>
 <p><a href="./?mode=native&amp;source=file">Базовая проверка с категорией playback</a></p>
-<p><a href="default-session.html">Сравнение: audio с категорией по умолчанию</a></p>
+<p><a href="video-element.html">Сравнение: видимый video</a></p>
 <label>Источник<select id="source"><option value="hls">Тестовый HLS · 3 минуты</option><option value="file">Тот же звук в M4A · 3 минуты</option><option value="current">Текущий HLS из музыкальной библиотеки</option></select></label>
 <label>Управление<select id="mode"><option value="native">Штатный плеер браузера</option><option value="session">Простые команды Media Session</option></select></label>
 <small>Штатное управление зафиксировано. Начни с тестового M4A.</small>
@@ -24,8 +24,8 @@ body{margin:0;background:#101827;color:#eef2ff;font:17px system-ui;line-height:1
 <div id="custom" hidden><button id="play">Play</button><button id="pause">Pause</button></div>
 <pre id="snapshot"></pre>
 <h2>Проверка на телефоне</h2>
-<ol><li>Открой эту страницу в Safari. Выбери «Поделиться → На экран Домой»: добавится отдельная «Video Check».</li><li>Останови музыку в других плеерах. Открой «Video Check». Вверху должно быть «PWA · штатное управление · категория по умолчанию · video».</li><li>Подготовь M4A, нажми кнопку Play ниже и подожди 10 секунд. Перейди на домашний экран.</li><li>Открой шторку: Pause, подожди 3 секунды, затем Play один раз. Подожди 15 секунд, оставаясь в шторке.</li><li>Вернись сюда, отметь результат для шторки и скачай отчёт. Микрофон пока не проверяй.</li></ol>
-<small>Для чистого сравнения запускай отдельную «Video Check», а не переходи сюда из уже играющего приложения. Сама страница категорию не сбрасывает и не меняет.</small>
+<ol><li>Открой эту страницу в Safari. Выбери «Поделиться → На экран Домой»: добавится отдельная «Video Hidden».</li><li>Останови музыку в других плеерах. Открой «Video Hidden». Вверху должно быть «PWA · штатное управление · категория по умолчанию · video · display: none».</li><li>Подготовь M4A, нажми кнопку Play ниже и убедись, что звук слышен и подожди 10 секунд. Перейди на домашний экран.</li><li>Открой шторку: Pause, подожди 3 секунды, затем Play один раз. Подожди 15 секунд, оставаясь в шторке.</li><li>Вернись сюда, отметь результат для шторки и скачай отчёт. Микрофон пока не проверяй.</li></ol>
+<small>Для чистого сравнения запускай отдельную «Video Hidden», а не переходи сюда из уже играющего приложения. Сама страница категорию не сбрасывает и не меняет.</small>
 <label>Что проверял<select id="scenario"><option value="widget">Pause / Play в шторке</option><option value="microphone">Возврат после микрофона</option><option value="background">Только переход в фон</option></select></label>
 <button data-result="audible">Звук продолжился</button><button data-result="silent">Была тишина</button><button data-result="foreground-only">Звук появился только при возврате</button>
 <button id="copy">Скопировать отчёт</button><button id="download">Скачать отчёт</button>
